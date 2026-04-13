@@ -41,6 +41,8 @@ class Multiplexer:
         self._clients: dict[str, ClientConnection] = {}
         self._client_counter = itertools.count(1)
         self._server: asyncio.Server | None = None
+        self._initialized = False
+        self._cached_capabilities: dict[str, Any] | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -113,13 +115,20 @@ class Multiplexer:
             logger.warning("Ignoring non-request from {}: {}", client_id, msg.get("type"))
             return
 
+        command = msg.get("command", "?")
+
+        # Late-join: respond to initialize locally from cached capabilities.
+        # DAP spec says initialize can only be sent once to the adapter.
+        if command == "initialize" and self._initialized:
+            await self._respond_with_cached_initialize(client_id, msg)
+            return
+
         original_seq = msg["seq"]
         proxy_seq = self._seq_map.allocate(client_id, original_seq)
 
         forwarded: dict[str, Any] = {**msg, "seq": proxy_seq}
         await self._upstream.send(forwarded)
 
-        command = msg.get("command", "?")
         logger.debug("[{}→DA] {} seq={} (proxy_seq={})", client_id, command, original_seq, proxy_seq)
 
     async def _handle_upstream_message(self, msg: DapMessage) -> None:
@@ -138,6 +147,12 @@ class Multiplexer:
             logger.warning("Response missing request_seq: {}", msg)
             return
 
+        # Cache capabilities from the first initialize response.
+        if msg.get("command") == "initialize" and msg.get("success") and not self._initialized:
+            self._initialized = True
+            self._cached_capabilities = msg.get("body")
+            logger.debug("Cached adapter capabilities from initialize response")
+
         pending = self._seq_map.resolve(request_seq)
         if pending is None:
             logger.warning("No pending request for response request_seq={}", request_seq)
@@ -153,6 +168,25 @@ class Multiplexer:
 
         command = msg.get("command", "?")
         logger.debug("[DA→{}] {} request_seq={}", pending.client_id, command, pending.client_seq)
+
+    async def _respond_with_cached_initialize(self, client_id: str, msg: DapMessage) -> None:
+        """Respond to a late-joining client's initialize with cached capabilities."""
+        client = self._clients.get(client_id)
+        if client is None:
+            return
+
+        response: dict[str, Any] = {
+            "seq": 0,
+            "type": "response",
+            "request_seq": msg["seq"],
+            "success": True,
+            "command": "initialize",
+        }
+        if self._cached_capabilities is not None:
+            response["body"] = self._cached_capabilities
+
+        await client.send(response)
+        logger.debug("[MUX→{}] initialize (cached capabilities)", client_id)
 
     async def _broadcast_event(self, msg: DapMessage) -> None:
         """Send an event to all connected clients."""
