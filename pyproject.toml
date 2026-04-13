@@ -1,0 +1,98 @@
+# === Build system ===
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+
+# === Project metadata ===
+
+[project]
+name = "dap-mux"
+dynamic = ["version"]
+description = "A DAP multiplexer that lets you debug from a REPL while your editor shows where you are."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE.md"]
+authors = [
+    { name = "Wolf", email = "Wolf@zv.cx" },
+]
+requires-python = ">=3.14"
+dependencies = [
+    "ipython",
+    "loguru",
+    "typer",
+]
+
+[dependency-groups]
+dev = [
+    "prek",
+    "pytest",
+    "ruff",
+    "ty",
+]
+
+[project.scripts]
+dmux = "dap_mux:main"
+
+
+# === Hatch (build and versioning) ===
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/dap_mux/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dap_mux"]
+
+
+# === ruff ===
+
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+extend-exclude = [
+    "src/dap_mux/_version.py",
+]
+
+[tool.ruff.lint]
+select = [
+    "D",    # pydocstyle — docstring conventions
+    "E",    # pycodestyle — PEP 8 errors
+    "F",    # pyflakes — unused imports, undefined names, etc.
+    "I",    # isort — import sorting
+    "W",    # pycodestyle — PEP 8 warnings
+    "UP",   # pyupgrade — modernize syntax for target Python version
+    "B",    # flake8-bugbear — common bugs and design problems
+]
+ignore = [
+    "D203",   # Conflicts with D211 (no blank line before class docstring)
+    "D212",   # Conflicts with D213 (multi-line summary on second line)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/dap_mux/_version.py" = ["ALL"]
+"tests/**" = ["D"]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = true
+
+[tool.ruff.format]
+quote-style = "double"
+
+
+# === ty ===
+
+[tool.ty.src]
+exclude = [
+    "hatch_build.py",
+]
+
+
+# === pytest ===
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules"
+testpaths = ["tests", "src"]

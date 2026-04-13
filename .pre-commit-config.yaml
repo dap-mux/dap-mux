@@ -1,0 +1,31 @@
+# .pre-commit-config.yaml — standard hook sequence
+#
+# Managed by prek (not pre-commit). Install: prek install
+# Run manually: prek run --all-files
+#
+# Hook order matters: format first, then lint, then type-check, then test.
+# Each stage must pass before code enters history.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.10
+    hooks:
+      - id: ruff-format
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty
+        entry: uv run ty check
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: pytest
+        name: pytest
+        entry: uv run pytest --doctest-modules
+        language: system
+        pass_filenames: false
+        always_run: true

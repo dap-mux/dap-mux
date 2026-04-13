@@ -1,0 +1,8 @@
+# .envrc — project-level direnv configuration
+#
+# Copy or symlink this to .envrc at the project root.
+# .envrc is gitignored — add credentials or local overrides there.
+#
+# Requires layout_uv in ~/.config/direnv/direnvrc (see DMP standards).
+
+layout uv
