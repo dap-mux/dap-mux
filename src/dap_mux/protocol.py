@@ -58,8 +58,10 @@ class DapEvent(TypedDict):
     body: NotRequired[dict[str, Any]]
 
 
-# A DAP message is any of the three shapes, or an unrecognized dict.
-type DapMessage = DapRequest | DapResponse | DapEvent | dict[str, Any]
+# A DAP message as it flows through the proxy — always a plain dict.
+# The TypedDicts above document the shapes; the proxy treats everything
+# as dicts and inspects only the fields it needs.
+type DapMessage = dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
