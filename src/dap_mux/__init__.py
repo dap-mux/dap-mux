@@ -20,8 +20,3 @@ __all__ = (
     "Multiplexer",
     "__version__",
 )
-
-
-def main() -> None:
-    """Entry point for the dmux CLI."""
-    print(f"dap-mux {__version__}")

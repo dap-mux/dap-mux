@@ -35,7 +35,7 @@ dev = [
 ]
 
 [project.scripts]
-dmux = "dap_mux:main"
+dmux = "dap_mux.cli:app"
 
 
 # === Hatch (build and versioning) ===
