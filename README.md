@@ -47,23 +47,129 @@ The editor is a *display*. The REPL is the *control surface*. Both are first-cla
 
 ## Status
 
-Early development. Not yet usable.
+Early development. The core architecture works — protocol framing, seq rewriting, multi-client support, event broadcasting, debugpy lifecycle, and IPython magics are all implemented and tested. Not yet battle-tested with real debugging sessions.
+
+## Requirements
+
+* **Python 3.14+** for running dap-mux itself
+* **debugpy** installed in the *target's* environment (dap-mux talks to it over TCP, never imports it)
 
 ## Installation
 
+dap-mux is not yet on PyPI. Install from source:
+
 ```
-pip install dap-mux    # or: uv tool install dap-mux
+# With uv (recommended)
+uv tool install git+https://github.com/USER/dap-mux.git
+
+# Or clone and install in development mode
+git clone https://github.com/USER/dap-mux.git
+cd dap-mux
+uv sync --group dev
 ```
+
+Make sure debugpy is available to your target script:
+
+```
+pip install debugpy    # in the target's virtualenv
+```
+
+## Quick Start
+
+**Terminal 1 — start dap-mux and the REPL:**
+
+```
+dmux target.py
+```
+
+This spawns debugpy attached to `target.py`, starts the multiplexer, and prints the port:
+
+```
+dap-mux listening on 127.0.0.1:5679
+Connect your editor to 127.0.0.1:5679
+```
+
+**Terminal 2 — connect your editor:**
+
+* **Helix:** `:debug-remote 127.0.0.1:5679 attach`
+* **Neovim:** configure nvim-dap to attach to `127.0.0.1:5679`
+* **Emacs:** configure dap-mode to attach to `127.0.0.1:5679`
+* **Vim:** configure Vimspector to attach to `127.0.0.1:5679`
+
+Set breakpoints in your editor. When execution hits one, both the editor and the REPL are notified — the editor highlights the line, and the REPL prints the stop location.
+
+**Back in Terminal 1 — use IPython magics to debug:**
+
+```
+%step              # step into
+%next              # step over
+%continue_         # continue execution
+%finish            # step out
+%eval x + 1        # evaluate in the debuggee's frame
+%bt                # show backtrace
+%frame 2           # select a stack frame
+%break app.py:42   # set a breakpoint
+%clear app.py:42   # remove breakpoints from file
+```
+
+Bare Python at the prompt runs locally in IPython. `%eval` evaluates in the debuggee. Both are useful.
 
 ## Usage
 
+### Launch mode
+
 ```
-dmux target.py                # launch mode: starts debugpy for you
-dmux --attach 5678            # attach mode: debugpy already running
-dmux --attach host:5678       # remote attach
+dmux target.py
 ```
 
-Then connect your editor to the multiplexer's port via `:debug-remote` (Helix), `nvim-dap` (Neovim), or any DAP-capable client.
+dap-mux spawns debugpy, starts the multiplexer, and opens the REPL. Everything in one command.
+
+### Attach mode
+
+When debugpy is already running (e.g. a Flask or Django server):
+
+```
+dmux --attach 5678            # localhost:5678
+dmux --attach 192.168.1.5:5678  # remote host
+```
+
+### CLI options
+
+```
+dmux --help
+
+Options:
+  --attach, -a TEXT      Attach to an already-running debug adapter ([host:]port)
+  --mux-port, -p INT     Port for DAP clients to connect to (0 = auto) [default: 0]
+  --log-level, -l TEXT    Log level (DEBUG, INFO, WARNING, ERROR) [default: WARNING]
+  --log-file TEXT         Also write logs to this file
+  --no-repl              Start the multiplexer without the IPython REPL
+  --version, -V          Show version and exit
+  --help                 Show this message and exit
+```
+
+### IPython extension
+
+The extension loads automatically when dap-mux starts the REPL. To load it manually in an existing IPython session:
+
+```
+%load_ext dap_mux.ipython_ext
+%connect 5679
+```
+
+| Magic | Alias | Description |
+|---|---|---|
+| `%connect host:port` | | Connect to the multiplexer |
+| `%disconnect` | | Disconnect |
+| `%step` | `%s` | Step into |
+| `%next` | `%n` | Step over |
+| `%continue_` | `%c` | Continue execution |
+| `%finish` | | Step out of current function |
+| `%eval expr` | | Evaluate expression in debuggee's frame |
+| `%bt` | | Show backtrace |
+| `%frame N` | | Select stack frame by index |
+| `%break file:line [cond]` | | Set breakpoint (with optional condition) |
+| `%clear file:line` | | Remove breakpoints from file |
 
 ## Compatibility
 
