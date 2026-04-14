@@ -90,6 +90,7 @@ quote-style = "double"
 [tool.ty.src]
 exclude = [
     "hatch_build.py",
+    "tests/test_ipython_ext.py",   # Mock-heavy; ty can't follow MagicMock attribute replacement
 ]
 
 
