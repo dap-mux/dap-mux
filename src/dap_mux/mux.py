@@ -18,6 +18,12 @@ from typing import Any
 from loguru import logger
 
 from dap_mux.client import ClientConnection
+from dap_mux.compat import (
+    is_known_reverse_request,
+    pick_reverse_request_target,
+    rewrite_stale_variable_error,
+    should_filter_event,
+)
 from dap_mux.protocol import DapMessage, is_event, is_request, is_response
 from dap_mux.seq import SeqMap
 from dap_mux.upstream import UpstreamConnection
@@ -43,6 +49,7 @@ class Multiplexer:
         self._server: asyncio.Server | None = None
         self._initialized = False
         self._cached_capabilities: dict[str, Any] | None = None
+        self._client_init_args: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -117,6 +124,10 @@ class Multiplexer:
 
         command = msg.get("command", "?")
 
+        # Cache initialize arguments for reverse request routing.
+        if command == "initialize":
+            self._client_init_args[client_id] = msg.get("arguments", {})
+
         # Late-join: respond to initialize locally from cached capabilities.
         # DAP spec says initialize can only be sent once to the adapter.
         if command == "initialize" and self._initialized:
@@ -134,9 +145,14 @@ class Multiplexer:
     async def _handle_upstream_message(self, msg: DapMessage) -> None:
         """Route a message from the adapter to the appropriate client(s)."""
         if is_response(msg):
+            msg = rewrite_stale_variable_error(msg)
             await self._route_response(msg)
         elif is_event(msg):
+            if should_filter_event(msg):
+                return
             await self._broadcast_event(msg)
+        elif is_known_reverse_request(msg):
+            await self._route_reverse_request(msg)
         else:
             logger.warning("Unexpected message type from adapter: {}", msg.get("type"))
 
@@ -195,9 +211,23 @@ class Multiplexer:
         for client in self._clients.values():
             await client.send(msg)
 
+    async def _route_reverse_request(self, msg: DapMessage) -> None:
+        """Route a reverse request from the adapter to the best client."""
+        target_id = pick_reverse_request_target(self._client_init_args, msg)
+        if target_id is None:
+            return
+        client = self._clients.get(target_id)
+        if client is None:
+            logger.warning("Target client {} for reverse request is gone", target_id)
+            return
+        await client.send(msg)
+        command = msg.get("command", "?")
+        logger.debug("[DA→{}] reverse request: {}", target_id, command)
+
     async def _handle_client_disconnect(self, client_id: str) -> None:
         """Clean up when a client disconnects."""
         removed = self._seq_map.cleanup(client_id)
+        self._client_init_args.pop(client_id, None)
         client = self._clients.pop(client_id, None)
         if client is not None:
             await client.close()
