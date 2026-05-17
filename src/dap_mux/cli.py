@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib.metadata
+import queue
 import sys
+import threading
 from typing import Annotated
 
 import typer
@@ -89,18 +91,25 @@ def main(
     _configure_logging(log_level, log_file)
 
     try:
-        asyncio.run(_run(target, attach, mux_port, no_repl))
+        if no_repl:
+            asyncio.run(_run_headless(target, attach, mux_port))
+        else:
+            _run_with_repl(target, attach, mux_port)
     except KeyboardInterrupt:
         pass
 
 
-async def _run(
+# ---------------------------------------------------------------------------
+# Headless mode (--no-repl)
+# ---------------------------------------------------------------------------
+
+
+async def _run_headless(
     target: str | None,
     attach: str | None,
     mux_port: int,
-    no_repl: bool,
 ) -> None:
-    """Async entry point: start adapter (if needed), mux, and wait."""
+    """Start adapter (if needed) and mux, then block until cancelled."""
     adapter: AdapterProcess | None = None
     mux = Multiplexer()
 
@@ -109,8 +118,7 @@ async def _run(
             adapter_host, adapter_port = _parse_attach(attach)
         else:
             assert target is not None
-            adapter_port_num = find_free_port()
-            adapter = AdapterProcess(target, port=adapter_port_num)
+            adapter = AdapterProcess(target, port=find_free_port())
             adapter_port = await adapter.start()
             adapter_host = adapter.host
 
@@ -119,20 +127,102 @@ async def _run(
 
         typer.echo(f"dap-mux listening on 127.0.0.1:{actual_port}")
         typer.echo(f"Connect your editor to 127.0.0.1:{actual_port}")
+        typer.echo("Press Ctrl-C to stop.")
 
-        if no_repl:
-            # Block until cancelled.
-            await asyncio.Event().wait()
-        else:
-            # TODO: start IPython REPL (M6)
-            typer.echo("REPL not yet implemented — running in headless mode.")
-            typer.echo("Press Ctrl-C to stop.")
-            await asyncio.Event().wait()
+        await asyncio.Event().wait()
 
     finally:
         await mux.close()
         if adapter is not None:
             await adapter.stop()
+
+
+# ---------------------------------------------------------------------------
+# REPL mode (default)
+# ---------------------------------------------------------------------------
+
+
+def _run_with_repl(
+    target: str | None,
+    attach: str | None,
+    mux_port: int,
+) -> None:
+    """Run the mux in a background thread and the IPython REPL in the main thread."""
+    port_queue: queue.Queue[int | Exception] = queue.Queue()
+    shutdown = threading.Event()
+
+    def _mux_thread() -> None:
+        asyncio.run(_run_mux_until(target, attach, mux_port, port_queue, shutdown))
+
+    t = threading.Thread(target=_mux_thread, daemon=True)
+    t.start()
+
+    result = port_queue.get(timeout=15.0)
+    if isinstance(result, Exception):
+        typer.echo(f"Error starting mux: {result}", err=True)
+        return
+
+    actual_port = result
+    typer.echo(f"dap-mux listening on 127.0.0.1:{actual_port}")
+    typer.echo(f"Connect your editor to 127.0.0.1:{actual_port}")
+
+    _start_ipython(actual_port)
+
+    shutdown.set()
+    t.join(timeout=5.0)
+
+
+async def _run_mux_until(
+    target: str | None,
+    attach: str | None,
+    mux_port: int,
+    port_queue: queue.Queue[int | Exception],
+    shutdown: threading.Event,
+) -> None:
+    """Start adapter (if needed) and mux, signal the port, then wait for shutdown."""
+    adapter: AdapterProcess | None = None
+    mux = Multiplexer()
+
+    try:
+        if attach is not None:
+            adapter_host, adapter_port = _parse_attach(attach)
+        else:
+            assert target is not None
+            adapter = AdapterProcess(target, port=find_free_port())
+            adapter_port = await adapter.start()
+            adapter_host = adapter.host
+
+        await mux.connect_upstream(adapter_host, adapter_port)
+        actual_port = await mux.serve("127.0.0.1", mux_port)
+        port_queue.put(actual_port)
+
+        await asyncio.to_thread(shutdown.wait)
+
+    except Exception as exc:
+        port_queue.put(exc)
+
+    finally:
+        await mux.close()
+        if adapter is not None:
+            await adapter.stop()
+
+
+def _start_ipython(port: int) -> None:
+    """Launch an IPython session with dap-mux pre-loaded and connected."""
+    from IPython import start_ipython
+    from traitlets.config import Config
+
+    c = Config()
+    c.InteractiveShellApp.exec_lines = [
+        "%load_ext dap_mux.ipython_ext",
+        f"%connect 127.0.0.1:{port}",
+    ]
+    start_ipython(config=c, argv=[])
+
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 
 
 def _configure_logging(level: str, log_file: str | None) -> None:
