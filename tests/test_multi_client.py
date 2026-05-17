@@ -190,3 +190,99 @@ class TestLateJoinInitialize:
         assert resp["request_seq"] == seq
 
         await c2.close()
+
+    @pytest.mark.asyncio
+    async def test_late_join_receives_stopped_replay(
+        self,
+        client: FakeClient,
+        mux_port: int,
+        fake_adapter: FakeAdapter,
+    ) -> None:
+        """A client joining while the session is stopped gets the cached stopped event."""
+        # First client initializes and the adapter fires a stopped event.
+        await client.send("initialize", {"clientID": "helix", "adapterID": "debugpy"})
+        await client.wait_for_response("initialize")
+        await fake_adapter.send_event("stopped", {"reason": "breakpoint", "threadId": 1})
+        await client.wait_for_event("stopped")
+
+        # Second client connects and late-joins.
+        from conftest import FakeClient as FC
+
+        c2 = FC()
+        await c2.connect("127.0.0.1", mux_port)
+        await asyncio.sleep(0.05)
+
+        await c2.send("initialize", {"clientID": "repl", "adapterID": "debugpy"})
+        await c2.wait_for_response("initialize")
+
+        # The mux should replay the stopped event to the late joiner.
+        evt = await c2.wait_for_event("stopped")
+        assert evt["body"]["reason"] == "breakpoint"
+        assert evt["body"]["threadId"] == 1
+
+        await c2.close()
+
+    @pytest.mark.asyncio
+    async def test_late_join_no_replay_after_continued(
+        self,
+        client: FakeClient,
+        mux_port: int,
+        fake_adapter: FakeAdapter,
+    ) -> None:
+        """No stopped replay if the session continued before the client joined."""
+        await client.send("initialize", {"clientID": "helix", "adapterID": "debugpy"})
+        await client.wait_for_response("initialize")
+
+        await fake_adapter.send_event("stopped", {"reason": "breakpoint", "threadId": 1})
+        await client.wait_for_event("stopped")
+        await fake_adapter.send_event("continued", {"threadId": 1})
+        await client.wait_for_event("continued")
+
+        from conftest import FakeClient as FC
+
+        c2 = FC()
+        await c2.connect("127.0.0.1", mux_port)
+        await asyncio.sleep(0.05)
+
+        await c2.send("initialize", {"clientID": "repl", "adapterID": "debugpy"})
+        await c2.wait_for_response("initialize")
+
+        # Allow a moment for any unexpected replay to arrive.
+        await asyncio.sleep(0.05)
+        events = [m for m in c2.received if m.get("type") == "event"]
+        assert not any(e.get("event") == "stopped" for e in events)
+
+        await c2.close()
+
+    @pytest.mark.asyncio
+    async def test_stopped_state_replaced_by_new_stop(
+        self,
+        client: FakeClient,
+        mux_port: int,
+        fake_adapter: FakeAdapter,
+    ) -> None:
+        """The cached stopped event is always the most recent one."""
+        await client.send("initialize", {"clientID": "helix", "adapterID": "debugpy"})
+        await client.wait_for_response("initialize")
+
+        await fake_adapter.send_event("stopped", {"reason": "breakpoint", "threadId": 1})
+        await client.wait_for_event("stopped")
+        await fake_adapter.send_event("continued", {"threadId": 1})
+        await client.wait_for_event("continued")
+        await fake_adapter.send_event("stopped", {"reason": "step", "threadId": 2})
+        await client.wait_for_event("stopped")
+
+        from conftest import FakeClient as FC
+
+        c2 = FC()
+        await c2.connect("127.0.0.1", mux_port)
+        await asyncio.sleep(0.05)
+
+        await c2.send("initialize", {"clientID": "repl", "adapterID": "debugpy"})
+        await c2.wait_for_response("initialize")
+
+        evt = await c2.wait_for_event("stopped")
+        assert evt["body"]["reason"] == "step"
+        assert evt["body"]["threadId"] == 2
+
+        await c2.close()

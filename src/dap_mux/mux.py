@@ -50,6 +50,7 @@ class Multiplexer:
         self._initialized = False
         self._cached_capabilities: dict[str, Any] | None = None
         self._client_init_args: dict[str, dict[str, Any]] = {}
+        self._last_stopped_event: DapMessage | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -204,10 +205,18 @@ class Multiplexer:
         await client.send(response)
         logger.debug("[MUX→{}] initialize (cached capabilities)", client_id)
 
+        if self._last_stopped_event is not None:
+            await client.send(self._last_stopped_event)
+            logger.debug("[MUX→{}] stopped (replayed for late joiner)", client_id)
+
     async def _broadcast_event(self, msg: DapMessage) -> None:
         """Send an event to all connected clients."""
         event_name = msg.get("event", "?")
         logger.debug("[DA→*] event={}", event_name)
+        if event_name == "stopped":
+            self._last_stopped_event = msg
+        elif event_name in ("continued", "terminated"):
+            self._last_stopped_event = None
         for client in self._clients.values():
             await client.send(msg)
 

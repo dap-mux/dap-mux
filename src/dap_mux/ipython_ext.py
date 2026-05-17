@@ -60,12 +60,22 @@ class DapConnection:
         return self._sock is not None
 
     def connect(self, host: str, port: int) -> None:
-        """Open a TCP connection to the multiplexer."""
+        """Open a TCP connection to the multiplexer and perform DAP handshake."""
         self._sock = socket.create_connection((host, port), timeout=5.0)
         self._sock.settimeout(1.0)
         self._running = True
         self._reader = threading.Thread(target=self._read_loop, daemon=True, name="dap-reader")
         self._reader.start()
+        self.send_request(
+            "initialize",
+            {
+                "clientID": "dap-mux-ipython",
+                "adapterID": "dap-mux",
+                "linesStartAt1": True,
+                "columnsStartAt1": True,
+                "pathFormat": "path",
+            },
+        )
         logger.info("Connected to dap-mux at {}:{}", host, port)
 
     def disconnect(self) -> None:
@@ -464,6 +474,33 @@ class DapMuxMagics(Magics):
                     _print_error(f"Breakpoint at {file_path}:{line_num} not verified")
         else:
             _print_error("Failed to set breakpoint")
+
+    @line_magic
+    def sync(self, line: str) -> None:  # noqa: ARG002
+        """Sync stopped state from the session. Usage: %sync."""
+        if not self.conn.connected:
+            _print_error("Not connected.")
+            return
+        resp = self.conn.send_request("threads")
+        if not resp or not resp.get("success"):
+            _print_error("Failed to get thread list.")
+            return
+        for thread in resp.get("body", {}).get("threads", []):
+            tid = thread.get("id")
+            if tid is None:
+                continue
+            st = self.conn.send_request("stackTrace", {"threadId": tid, "startFrame": 0, "levels": 1})
+            if st and st.get("success") and st.get("body", {}).get("stackFrames"):
+                frame = st["body"]["stackFrames"][0]
+                self.conn.current_thread_id = tid
+                self.conn.current_frame_id = frame.get("id")
+                source = frame.get("source", {})
+                self.conn.stopped_file = source.get("path") or source.get("name")
+                self.conn.stopped_line = frame.get("line")
+                _print_notification(f"Synced: stopped on thread {tid}")
+                _print_location(self.conn.stopped_file, self.conn.stopped_line, frame.get("name"))
+                return
+        _print_notification("No stopped threads found.")
 
     @line_magic
     def clear(self, line: str) -> None:
