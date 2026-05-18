@@ -127,6 +127,43 @@ class TestTwoClients:
         assert evt["body"]["threadId"] == 1
 
 
+class TestConcurrentInitialize:
+    """Two clients send initialize before the adapter responds to the first."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_initialize_both_succeed(
+        self,
+        mux_port: int,
+        fake_adapter: FakeAdapter,
+    ) -> None:
+        """Both clients get an initialize response even when they race to send it."""
+        from conftest import FakeClient as FC
+
+        c1 = FC()
+        c2 = FC()
+        await c1.connect("127.0.0.1", mux_port)
+        await c2.connect("127.0.0.1", mux_port)
+        await asyncio.sleep(0.05)
+
+        # Both send initialize without waiting.
+        await c1.send("initialize", {"clientID": "helix", "adapterID": "debugpy"})
+        await c2.send("initialize", {"clientID": "ipython", "adapterID": "debugpy"})
+
+        resp1 = await c1.wait_for_response("initialize")
+        resp2 = await c2.wait_for_response("initialize")
+
+        assert resp1["success"] is True
+        assert resp2["success"] is True
+        assert resp1["body"] == resp2["body"]
+
+        # The adapter must receive exactly one initialize.
+        init_count = sum(1 for m in fake_adapter.received if m.get("command") == "initialize")
+        assert init_count == 1
+
+        await c1.close()
+        await c2.close()
+
+
 class TestLateJoinInitialize:
     """A client connecting after the session is already initialized."""
 
@@ -188,6 +225,34 @@ class TestLateJoinInitialize:
         resp = await c2.wait_for_response("threads")
         assert resp["success"] is True
         assert resp["request_seq"] == seq
+
+        await c2.close()
+
+    @pytest.mark.asyncio
+    async def test_late_join_receives_initialized_replay(
+        self,
+        client: FakeClient,
+        mux_port: int,
+        fake_adapter: FakeAdapter,
+    ) -> None:
+        """A late-joining client receives the cached initialized event so it can proceed."""
+        await client.send("initialize", {"clientID": "helix", "adapterID": "debugpy"})
+        await client.wait_for_response("initialize")
+        await fake_adapter.send_event("initialized", {})
+        await client.wait_for_event("initialized")
+
+        from conftest import FakeClient as FC
+
+        c2 = FC()
+        await c2.connect("127.0.0.1", mux_port)
+        await asyncio.sleep(0.05)
+
+        await c2.send("initialize", {"clientID": "repl", "adapterID": "debugpy"})
+        await c2.wait_for_response("initialize")
+
+        evt = await c2.wait_for_event("initialized")
+        assert evt["type"] == "event"
+        assert evt["event"] == "initialized"
 
         await c2.close()
 

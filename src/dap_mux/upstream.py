@@ -42,15 +42,40 @@ class UpstreamConnection:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def connect(self, host: str, port: int) -> None:
-        """Open a TCP connection to the debug adapter at *host*:*port*."""
-        reader, writer = await asyncio.open_connection(host, port)
-        self._writer = writer
-        self._tasks = [
-            asyncio.create_task(self._read_loop(reader), name="upstream-read"),
-            asyncio.create_task(self._write_loop(writer), name="upstream-write"),
-        ]
-        logger.info("Connected to debug adapter at {}:{}", host, port)
+    async def connect(
+        self,
+        host: str,
+        port: int,
+        *,
+        retry_timeout: float = 10.0,
+        retry_interval: float = 0.1,
+    ) -> None:
+        """
+        Open a TCP connection to the debug adapter at *host*:*port*.
+
+        Retries on ``ConnectionRefusedError`` until *retry_timeout* seconds
+        have elapsed so callers don't need a separate readiness probe.  A
+        probe-then-connect pattern makes debug adapters (like debugpy) see a
+        spurious connect/disconnect that can cause them to exit early.
+
+        """
+        deadline = asyncio.get_event_loop().time() + retry_timeout
+        last_exc: Exception = ConnectionRefusedError("never attempted")
+        while asyncio.get_event_loop().time() < deadline:
+            try:
+                reader, writer = await asyncio.open_connection(host, port)
+                self._writer = writer
+                self._tasks = [
+                    asyncio.create_task(self._read_loop(reader), name="upstream-read"),
+                    asyncio.create_task(self._write_loop(writer), name="upstream-write"),
+                ]
+                logger.info("Connected to debug adapter at {}:{}", host, port)
+                return
+            except (ConnectionRefusedError, OSError) as exc:
+                last_exc = exc
+                await asyncio.sleep(retry_interval)
+        msg = f"Timed out connecting to debug adapter at {host}:{port} after {retry_timeout}s"
+        raise TimeoutError(msg) from last_exc
 
     async def close(self) -> None:
         """Shut down the connection and cancel background tasks."""

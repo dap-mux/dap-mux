@@ -196,7 +196,8 @@ async def _run_mux_until(
         actual_port = await mux.serve("127.0.0.1", mux_port)
         port_queue.put(actual_port)
 
-        await asyncio.to_thread(shutdown.wait)
+        while not shutdown.is_set():
+            await asyncio.sleep(0.1)
 
     except Exception as exc:
         port_queue.put(exc)

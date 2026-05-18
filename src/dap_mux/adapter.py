@@ -133,8 +133,7 @@ class AdapterProcess:
             name="adapter-output",
         )
 
-        await wait_for_port(self._host, self._port)
-        logger.info("Debug adapter listening on {}:{}", self._host, self._port)
+        logger.info("Debug adapter started (pid={}), will listen on {}:{}", self._process.pid, self._host, self._port)
         return self._port
 
     async def stop(self) -> int | None:

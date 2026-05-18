@@ -87,9 +87,9 @@ class DapConnection:
             except OSError:
                 pass
             self._sock = None
-        if self._reader is not None:
+        if self._reader is not None and self._reader is not threading.current_thread():
             self._reader.join(timeout=2.0)
-            self._reader = None
+        self._reader = None
         self.current_thread_id = None
         self.current_frame_id = None
         self.stopped_file = None

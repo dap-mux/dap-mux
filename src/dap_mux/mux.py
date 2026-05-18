@@ -48,8 +48,11 @@ class Multiplexer:
         self._client_counter = itertools.count(1)
         self._server: asyncio.Server | None = None
         self._initialized = False
+        self._initializing = False
+        self._pending_initialize: list[tuple[str, DapMessage]] = []
         self._cached_capabilities: dict[str, Any] | None = None
         self._client_init_args: dict[str, dict[str, Any]] = {}
+        self._initialized_event: DapMessage | None = None
         self._last_stopped_event: DapMessage | None = None
 
     # ------------------------------------------------------------------
@@ -135,6 +138,18 @@ class Multiplexer:
             await self._respond_with_cached_initialize(client_id, msg)
             return
 
+        # In-flight guard: if an initialize is already being forwarded to the
+        # adapter but hasn't been responded to yet, buffer this one.  Real
+        # adapters (debugpy) silently ignore a second initialize, which would
+        # leave the second client waiting forever.
+        if command == "initialize" and self._initializing:
+            self._pending_initialize.append((client_id, msg))
+            logger.debug("[{}] initialize buffered (first initialize still in-flight)", client_id)
+            return
+
+        if command == "initialize":
+            self._initializing = True
+
         original_seq = msg["seq"]
         proxy_seq = self._seq_map.allocate(client_id, original_seq)
 
@@ -167,8 +182,12 @@ class Multiplexer:
         # Cache capabilities from the first initialize response.
         if msg.get("command") == "initialize" and msg.get("success") and not self._initialized:
             self._initialized = True
+            self._initializing = False
             self._cached_capabilities = msg.get("body")
             logger.debug("Cached adapter capabilities from initialize response")
+            for buf_client_id, buf_msg in self._pending_initialize:
+                await self._respond_with_cached_initialize(buf_client_id, buf_msg)
+            self._pending_initialize.clear()
 
         pending = self._seq_map.resolve(request_seq)
         if pending is None:
@@ -205,6 +224,10 @@ class Multiplexer:
         await client.send(response)
         logger.debug("[MUX→{}] initialize (cached capabilities)", client_id)
 
+        if self._initialized_event is not None:
+            await client.send(self._initialized_event)
+            logger.debug("[MUX→{}] initialized (replayed for late joiner)", client_id)
+
         if self._last_stopped_event is not None:
             await client.send(self._last_stopped_event)
             logger.debug("[MUX→{}] stopped (replayed for late joiner)", client_id)
@@ -213,7 +236,9 @@ class Multiplexer:
         """Send an event to all connected clients."""
         event_name = msg.get("event", "?")
         logger.debug("[DA→*] event={}", event_name)
-        if event_name == "stopped":
+        if event_name == "initialized":
+            self._initialized_event = msg
+        elif event_name == "stopped":
             self._last_stopped_event = msg
         elif event_name in ("continued", "terminated"):
             self._last_stopped_event = None
