@@ -45,7 +45,7 @@ class DapConnection:
         self._send_lock = threading.Lock()
         self._reader: threading.Thread | None = None
         self._running = False
-        self._response_queues: dict[str, queue.Queue[dict[str, Any]]] = {}
+        self._response_queues: dict[int, queue.Queue[dict[str, Any]]] = {}
         self._queue_lock = threading.Lock()
 
         # Debug session state.
@@ -59,7 +59,7 @@ class DapConnection:
         """Whether the connection is open."""
         return self._sock is not None
 
-    def connect(self, host: str, port: int) -> None:
+    def connect(self, host: str, port: int, *, stop_on_entry: bool = False) -> None:
         """Open a TCP connection to the multiplexer and perform DAP handshake."""
         self._sock = socket.create_connection((host, port), timeout=5.0)
         self._sock.settimeout(1.0)
@@ -76,6 +76,9 @@ class DapConnection:
                 "pathFormat": "path",
             },
         )
+        if stop_on_entry:
+            self.send_request("attach", {"stopOnEntry": True})
+            self.send_request("configurationDone", {})
         logger.info("Connected to dap-mux at {}:{}", host, port)
 
     def disconnect(self) -> None:
@@ -107,27 +110,27 @@ class DapConnection:
             _print_error("Not connected. Use %connect first.")
             return None
 
-        msg: dict[str, Any] = {
-            "seq": self._seq,
-            "type": "request",
-            "command": command,
-        }
-        if arguments is not None:
-            msg["arguments"] = arguments
-        self._seq += 1
-
-        # Set up a queue for the response before sending.
         q: queue.Queue[dict[str, Any]] = queue.Queue()
-        with self._queue_lock:
-            self._response_queues[command] = q
-
         with self._send_lock:
+            seq = self._seq
+            self._seq += 1
+            msg: dict[str, Any] = {
+                "seq": seq,
+                "type": "request",
+                "command": command,
+            }
+            if arguments is not None:
+                msg["arguments"] = arguments
+            # Register the queue before sending so the response can't arrive
+            # before we're listening for it.
+            with self._queue_lock:
+                self._response_queues[seq] = q
             try:
                 self._sock.sendall(encode_message(msg))
             except OSError as e:
                 _print_error(f"Send failed: {e}")
                 with self._queue_lock:
-                    self._response_queues.pop(command, None)
+                    self._response_queues.pop(seq, None)
                 return None
 
         # Wait for the reader thread to deliver the response.
@@ -138,7 +141,7 @@ class DapConnection:
             return None
         finally:
             with self._queue_lock:
-                self._response_queues.pop(command, None)
+                self._response_queues.pop(seq, None)
 
     def _read_loop(self) -> None:
         """Background thread: read all messages, dispatch responses and events."""
@@ -185,9 +188,11 @@ class DapConnection:
 
     def _dispatch_response(self, msg: dict[str, Any]) -> None:
         """Deliver a response to the waiting send_request call."""
-        command = msg.get("command", "")
+        req_seq = msg.get("request_seq")
+        if req_seq is None:
+            return
         with self._queue_lock:
-            q = self._response_queues.get(command)
+            q = self._response_queues.get(req_seq)
         if q is not None:
             q.put(msg)
 
@@ -285,25 +290,28 @@ class DapMuxMagics(Magics):
 
     @line_magic
     def connect(self, line: str) -> None:
-        """Connect to the dap-mux multiplexer. Usage: %connect [host:]port."""
+        """Connect to the dap-mux multiplexer. Usage: %connect [--stop-on-entry] [host:]port."""
         if self.conn.connected:
             _print_error("Already connected. Use %disconnect first.")
             return
-        parts = line.strip()
-        if not parts:
-            _print_error("Usage: %connect [host:]port")
+        tokens = line.strip().split()
+        stop_on_entry = "--stop-on-entry" in tokens
+        tokens = [t for t in tokens if t != "--stop-on-entry"]
+        if not tokens:
+            _print_error("Usage: %connect [--stop-on-entry] [host:]port")
             return
-        if ":" in parts:
-            host, port_str = parts.rsplit(":", 1)
+        addr = tokens[0]
+        if ":" in addr:
+            host, port_str = addr.rsplit(":", 1)
             host = host or "127.0.0.1"
         else:
-            host, port_str = "127.0.0.1", parts
+            host, port_str = "127.0.0.1", addr
         try:
             port = int(port_str)
         except ValueError:
             _print_error(f"Invalid port: {port_str}")
             return
-        self.conn.connect(host, port)
+        self.conn.connect(host, port, stop_on_entry=stop_on_entry)
         _print_notification(f"Connected to {host}:{port}")
 
     @line_magic
