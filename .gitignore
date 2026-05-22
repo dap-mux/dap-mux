@@ -29,5 +29,12 @@ Thumbs.db
 # Local-only files (not tracked)
 *.local-only.*
 
+# Test coverage artifacts
+.coverage
+htmlcov/
+
 # Spike artifacts (not part of the project)
 SPIKE-CONCLUSIONS.md
+
+# Demo scripts (not part of the project)
+fibonacci.py
