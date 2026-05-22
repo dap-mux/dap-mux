@@ -17,9 +17,12 @@ from typing import Annotated
 
 import typer
 from loguru import logger
+from rich.console import Console
 
 from dap_mux.adapter import AdapterProcess, find_free_port
 from dap_mux.mux import Multiplexer
+
+_console = Console()
 
 app = typer.Typer(
     name="dmux",
@@ -125,9 +128,7 @@ async def _run_headless(
         await mux.connect_upstream(adapter_host, adapter_port)
         actual_port = await mux.serve("127.0.0.1", mux_port)
 
-        typer.echo(f"dap-mux listening on 127.0.0.1:{actual_port}")
-        typer.echo(f"Connect your editor to 127.0.0.1:{actual_port}")
-        typer.echo("Press Ctrl-C to stop.")
+        _console.print(f"[bold green]●[/] dap-mux listening on [bold cyan]127.0.0.1:{actual_port}[/] — Ctrl-C to stop")
 
         await asyncio.Event().wait()
 
@@ -163,10 +164,9 @@ def _run_with_repl(
         return
 
     actual_port = result
-    typer.echo(f"dap-mux listening on 127.0.0.1:{actual_port}")
-    typer.echo(f"Connect your editor to 127.0.0.1:{actual_port}")
+    _console.print(f"[bold green]●[/] dap-mux ready — connect your editor to [bold cyan]127.0.0.1:{actual_port}[/]")
 
-    _start_ipython(actual_port)
+    _start_ipython(actual_port, stop_on_entry=(target is not None))
 
     shutdown.set()
     t.join(timeout=5.0)
@@ -208,15 +208,16 @@ async def _run_mux_until(
             await adapter.stop()
 
 
-def _start_ipython(port: int) -> None:
+def _start_ipython(port: int, *, stop_on_entry: bool = False) -> None:
     """Launch an IPython session with dap-mux pre-loaded and connected."""
     from IPython import start_ipython
     from traitlets.config import Config
 
     c = Config()
+    connect_flags = "--stop-on-entry " if stop_on_entry else ""
     c.InteractiveShellApp.exec_lines = [
         "%load_ext dap_mux.ipython_ext",
-        f"%connect 127.0.0.1:{port}",
+        f"%connect {connect_flags}127.0.0.1:{port}",
     ]
     start_ipython(config=c, argv=[])
 
@@ -226,10 +227,17 @@ def _start_ipython(port: int) -> None:
 # ---------------------------------------------------------------------------
 
 
+_VALID_LOG_LEVELS = frozenset({"TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"})
+
+
 def _configure_logging(level: str, log_file: str | None) -> None:
     """Set up loguru sinks — this is the only place that configures logging."""
+    upper = level.upper()
+    if upper not in _VALID_LOG_LEVELS:
+        valid = ", ".join(sorted(_VALID_LOG_LEVELS))
+        raise typer.BadParameter(f"{level!r} is not a valid log level. Choose from: {valid}")
     logger.remove()
-    logger.add(sys.stderr, level=level.upper())
+    logger.add(sys.stderr, level=upper)
     if log_file is not None:
         logger.add(log_file, level="DEBUG")
 

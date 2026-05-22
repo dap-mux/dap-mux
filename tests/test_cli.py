@@ -39,6 +39,26 @@ class TestArgValidation:
         assert "mutually exclusive" in result.output
 
 
+class TestLogLevel:
+    """--log-level validation."""
+
+    def test_invalid_log_level(self) -> None:
+        result = runner.invoke(app, ["target.py", "--log-level", "VERBOS"])
+        assert result.exit_code != 0
+        assert "VERBOS" in result.output
+
+    def test_valid_log_levels(self) -> None:
+        from dap_mux.cli import _VALID_LOG_LEVELS, _configure_logging
+
+        for level in _VALID_LOG_LEVELS:
+            _configure_logging(level, None)  # must not raise
+
+    def test_level_case_insensitive(self) -> None:
+        from dap_mux.cli import _configure_logging
+
+        _configure_logging("debug", None)  # lowercase must not raise
+
+
 class TestParseAttach:
     """Address parsing for --attach."""
 
