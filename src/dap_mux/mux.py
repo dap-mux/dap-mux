@@ -12,6 +12,7 @@ originating client; events are broadcast to all connected clients.
 from __future__ import annotations
 
 import asyncio
+import enum
 import itertools
 from typing import Any
 
@@ -31,6 +32,15 @@ from dap_mux.upstream import UpstreamConnection
 logger = logger.bind(library="dap_mux")
 
 
+class SessionPhase(enum.IntEnum):
+    """Linear phases of a DAP session, in order of progression."""
+
+    PRE_INIT = 0
+    INITIALIZING = 1  # first initialize forwarded, awaiting adapter response
+    INITIALIZED = 2  # adapter responded; capabilities cached
+    CONFIGURED = 3  # first configurationDone forwarded; session running
+
+
 class Multiplexer:
     """
     DAP multiplexer: one upstream adapter, many downstream clients.
@@ -47,8 +57,7 @@ class Multiplexer:
         self._clients: dict[str, ClientConnection] = {}
         self._client_counter = itertools.count(1)
         self._server: asyncio.Server | None = None
-        self._initialized = False
-        self._initializing = False
+        self._phase = SessionPhase.PRE_INIT
         self._pending_initialize: list[tuple[str, DapMessage]] = []
         self._cached_capabilities: dict[str, Any] | None = None
         self._client_init_args: dict[str, dict[str, Any]] = {}
@@ -134,7 +143,7 @@ class Multiplexer:
 
         # Late-join: respond to initialize locally from cached capabilities.
         # DAP spec says initialize can only be sent once to the adapter.
-        if command == "initialize" and self._initialized:
+        if command == "initialize" and self._phase >= SessionPhase.INITIALIZED:
             await self._respond_with_cached_initialize(client_id, msg)
             return
 
@@ -142,13 +151,35 @@ class Multiplexer:
         # adapter but hasn't been responded to yet, buffer this one.  Real
         # adapters (debugpy) silently ignore a second initialize, which would
         # leave the second client waiting forever.
-        if command == "initialize" and self._initializing:
+        if command == "initialize" and self._phase == SessionPhase.INITIALIZING:
             self._pending_initialize.append((client_id, msg))
             logger.debug("[{}] initialize buffered (first initialize still in-flight)", client_id)
             return
 
         if command == "initialize":
-            self._initializing = True
+            self._phase = SessionPhase.INITIALIZING
+
+        # Session-start phase: once the session is configured, late-joining
+        # clients must not re-send attach/launch/configurationDone to the
+        # adapter — doing so disrupts the running session for everyone.
+        if command in ("attach", "launch") and self._phase == SessionPhase.CONFIGURED:
+            await self._respond_synthetic_success(client_id, msg)
+            return
+
+        if command == "configurationDone":
+            if self._phase == SessionPhase.CONFIGURED:
+                await self._respond_synthetic_success(client_id, msg)
+                return
+            # Mark configured before forwarding so a concurrent
+            # configurationDone from another client is intercepted.
+            self._phase = SessionPhase.CONFIGURED
+
+        # Session-lifecycle commands: forwarding disconnect, terminate, or
+        # restart would kill or disrupt the shared session for all clients.
+        # The mux owns the session lifetime; individual clients cannot end it.
+        if command in ("disconnect", "terminate", "restart"):
+            await self._respond_synthetic_success(client_id, msg)
+            return
 
         original_seq = msg["seq"]
         proxy_seq = self._seq_map.allocate(client_id, original_seq)
@@ -180,9 +211,8 @@ class Multiplexer:
             return
 
         # Cache capabilities from the first initialize response.
-        if msg.get("command") == "initialize" and msg.get("success") and not self._initialized:
-            self._initialized = True
-            self._initializing = False
+        if msg.get("command") == "initialize" and msg.get("success") and self._phase == SessionPhase.INITIALIZING:
+            self._phase = SessionPhase.INITIALIZED
             self._cached_capabilities = msg.get("body")
             logger.debug("Cached adapter capabilities from initialize response")
             for buf_client_id, buf_msg in self._pending_initialize:
@@ -232,6 +262,21 @@ class Multiplexer:
             await client.send(self._last_stopped_event)
             logger.debug("[MUX→{}] stopped (replayed for late joiner)", client_id)
 
+    async def _respond_synthetic_success(self, client_id: str, msg: DapMessage) -> None:
+        """Return a synthetic success response without forwarding *msg* upstream."""
+        client = self._clients.get(client_id)
+        if client is None:
+            return
+        response: dict[str, Any] = {
+            "seq": 0,
+            "type": "response",
+            "request_seq": msg["seq"],
+            "success": True,
+            "command": msg.get("command", ""),
+        }
+        await client.send(response)
+        logger.debug("[MUX→{}] {} (synthetic success)", client_id, msg.get("command"))
+
     async def _broadcast_event(self, msg: DapMessage) -> None:
         """Send an event to all connected clients."""
         event_name = msg.get("event", "?")
@@ -268,4 +313,4 @@ class Multiplexer:
         logger.info("Client {} removed ({} pending requests cleaned up)", client_id, removed)
 
 
-__all__ = ("Multiplexer",)
+__all__ = ("Multiplexer", "SessionPhase")

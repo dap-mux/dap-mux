@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from dap_mux.mux import Multiplexer, SessionPhase
+
 if TYPE_CHECKING:
     from conftest import FakeAdapter, FakeClient
 
@@ -351,3 +353,160 @@ class TestLateJoinInitialize:
         assert evt["body"]["threadId"] == 2
 
         await c2.close()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _configure_session(client: FakeClient) -> None:
+    """Drive a client through the full configuration phase."""
+    await client.send("initialize", {"clientID": "first", "adapterID": "debugpy"})
+    await client.wait_for_response("initialize")
+    await client.send("attach", {})
+    await client.wait_for_response("attach")
+    await client.send("configurationDone", {})
+    await client.wait_for_response("configurationDone")
+
+
+# ---------------------------------------------------------------------------
+# Session-phase interception
+# ---------------------------------------------------------------------------
+
+
+class TestSessionPhaseInterception:
+    """attach/launch/configurationDone from late-joining clients are intercepted."""
+
+    @pytest.mark.asyncio
+    async def test_phase_advances_to_configured(self, client: FakeClient, mux: Multiplexer) -> None:
+        """configurationDone advances the session phase to CONFIGURED."""
+        assert mux._phase == SessionPhase.PRE_INIT
+        await _configure_session(client)
+        assert mux._phase == SessionPhase.CONFIGURED
+
+    @pytest.mark.asyncio
+    async def test_first_attach_forwarded(self, client: FakeClient, fake_adapter: FakeAdapter) -> None:
+        """First client's attach is forwarded to the adapter normally."""
+        await client.send("initialize", {"clientID": "c1", "adapterID": "debugpy"})
+        await client.wait_for_response("initialize")
+        await client.send("attach", {})
+        resp = await client.wait_for_response("attach")
+        assert resp["success"] is True
+        assert any(m.get("command") == "attach" for m in fake_adapter.received)
+
+    @pytest.mark.asyncio
+    async def test_second_client_attach_intercepted(
+        self, client: FakeClient, mux_port: int, fake_adapter: FakeAdapter
+    ) -> None:
+        """After configurationDone, a second client's attach gets synthetic success."""
+        from conftest import FakeClient as FC
+
+        await _configure_session(client)
+        attach_count = sum(1 for m in fake_adapter.received if m.get("command") == "attach")
+
+        c2 = FC()
+        await c2.connect("127.0.0.1", mux_port)
+        await c2.send("initialize", {"clientID": "c2", "adapterID": "debugpy"})
+        await c2.wait_for_response("initialize")
+        await c2.send("attach", {})
+        resp = await c2.wait_for_response("attach")
+
+        assert resp["success"] is True
+        # Adapter must NOT have received a second attach.
+        assert sum(1 for m in fake_adapter.received if m.get("command") == "attach") == attach_count
+        await c2.close()
+
+    @pytest.mark.asyncio
+    async def test_second_client_configuration_done_intercepted(
+        self, client: FakeClient, mux_port: int, fake_adapter: FakeAdapter
+    ) -> None:
+        """configurationDone from a late joiner gets synthetic success."""
+        from conftest import FakeClient as FC
+
+        await _configure_session(client)
+        cd_count = sum(1 for m in fake_adapter.received if m.get("command") == "configurationDone")
+
+        c2 = FC()
+        await c2.connect("127.0.0.1", mux_port)
+        await c2.send("initialize", {"clientID": "c2", "adapterID": "debugpy"})
+        await c2.wait_for_response("initialize")
+        await c2.send("configurationDone", {})
+        resp = await c2.wait_for_response("configurationDone")
+
+        assert resp["success"] is True
+        assert sum(1 for m in fake_adapter.received if m.get("command") == "configurationDone") == cd_count
+        await c2.close()
+
+    @pytest.mark.asyncio
+    async def test_late_joiner_can_still_debug(
+        self, client: FakeClient, mux_port: int, fake_adapter: FakeAdapter
+    ) -> None:
+        """After synthetic attach/configurationDone, the late joiner can send normal requests."""
+        from conftest import FakeClient as FC
+
+        await _configure_session(client)
+        await fake_adapter.send_event("stopped", {"reason": "breakpoint", "threadId": 1})
+
+        c2 = FC()
+        await c2.connect("127.0.0.1", mux_port)
+        await c2.send("initialize", {"clientID": "c2", "adapterID": "debugpy"})
+        await c2.wait_for_response("initialize")
+        await c2.send("attach", {})
+        await c2.wait_for_response("attach")
+        await c2.send("configurationDone", {})
+        await c2.wait_for_response("configurationDone")
+
+        await c2.send("threads")
+        resp = await c2.wait_for_response("threads")
+        assert resp["success"] is True
+        await c2.close()
+
+
+# ---------------------------------------------------------------------------
+# Disruptive-command interception
+# ---------------------------------------------------------------------------
+
+
+class TestDisruptiveCommandInterception:
+    """disconnect/terminate/restart are never forwarded to the adapter."""
+
+    @pytest.mark.asyncio
+    async def test_disconnect_not_forwarded(self, client: FakeClient, fake_adapter: FakeAdapter) -> None:
+        """disconnect returns synthetic success and does not reach the adapter."""
+        await client.send("disconnect", {})
+        resp = await client.wait_for_response("disconnect")
+        assert resp["success"] is True
+        assert all(m.get("command") != "disconnect" for m in fake_adapter.received)
+
+    @pytest.mark.asyncio
+    async def test_session_survives_disconnect_request(self, client: FakeClient, mux_port: int) -> None:
+        """After one client sends disconnect, other clients can still use the session."""
+        from conftest import FakeClient as FC
+
+        await client.send("disconnect", {})
+        await client.wait_for_response("disconnect")
+        await asyncio.sleep(0.05)
+
+        c2 = FC()
+        await c2.connect("127.0.0.1", mux_port)
+        await c2.send("threads")
+        resp = await c2.wait_for_response("threads")
+        assert resp["success"] is True
+        await c2.close()
+
+    @pytest.mark.asyncio
+    async def test_terminate_not_forwarded(self, client: FakeClient, fake_adapter: FakeAdapter) -> None:
+        """terminate returns synthetic success and does not reach the adapter."""
+        await client.send("terminate", {})
+        resp = await client.wait_for_response("terminate")
+        assert resp["success"] is True
+        assert all(m.get("command") != "terminate" for m in fake_adapter.received)
+
+    @pytest.mark.asyncio
+    async def test_restart_not_forwarded(self, client: FakeClient, fake_adapter: FakeAdapter) -> None:
+        """restart returns synthetic success and does not reach the adapter."""
+        await client.send("restart", {})
+        resp = await client.wait_for_response("restart")
+        assert resp["success"] is True
+        assert all(m.get("command") != "restart" for m in fake_adapter.received)
