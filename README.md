@@ -1,225 +1,272 @@
 # dap-mux
 
-You have your favorite TUI editor (Helix, Neovim, ...). You have a REPL where you explore (IPython, ...). dap-mux connects them — you debug and fully control from within IPython, but see the current line of execution, breakpoints, and stack context in your editor.
+Every terminal debugger forces a choice: a REPL with full evaluation power but no source context, or an editor with visual breakpoints but a crippled debug console. dap-mux removes that choice.
 
-This is a uv project, implemented in Python, requiring Python 3.14+.
-
-## Goal
-
-Give terminal-first developers a debugging workflow that combines the exploration power of an IPython REPL with the visual source tracking of their editor — no GUI IDE required.
-
-Today, every debugging tool forces a choice: either you get a REPL with full evaluation power but no source context (ipdb, IPython's `%debug`), or you get an editor with visual breakpoints and stepping but a cramped, limited debug console (VS Code, PyCharm, Neovim's nvim-dap). dap-mux eliminates that choice. Your editor shows where you are. Your REPL is where you work. Both are first-class clients of the same debug session.
-
-**Success looks like:** one command starts everything — the debug adapter, the multiplexer, and the REPL. You set breakpoints in your editor, hit one, and you're sitting at an IPython prompt with full access to the stopped frame. You step from the REPL; the editor's cursor follows. It feels like one tool, not two things wired together.
-
-## Who This Is For
-
-* **Terminal-first developers** using Helix, Neovim, Emacs, or any DAP-capable editor who want IDE-quality debugging without leaving their terminal
-* **Data scientists** who live in IPython and want visual source tracking while debugging
-* **Remote developers** debugging over SSH where GUI IDEs aren't an option
-* **Teams migrating from PyCharm** to terminal workflows who don't want to give up the debugger
-
-## Who This Is Not For
-
-* **Developers happy with VS Code or PyCharm.** If your GUI debugger works, you don't need this.
-* **People who want a standalone TUI debugger.** Use [pudb](https://github.com/inducer/pudb) — it's excellent and doesn't need an editor.
-* **People looking for a DAP library.** dap-mux is a tool, not a protocol implementation. For typed DAP models, see [dap-python](https://github.com/tomlin7/debug-adapter-client).
-
-## How It Works
-
-dap-mux is a DAP proxy that sits between a debug adapter (like debugpy) and multiple DAP clients. Your editor connects as one client — it shows source, breakpoints, and current position. An IPython REPL connects as another — you step, evaluate expressions, and explore. Both share the same debug session through the multiplexer.
+Connect your editor and IPython to the same debug session simultaneously. Step from IPython while your editor tracks the current line. Evaluate arbitrary expressions in the stopped frame. Set breakpoints from either side.
 
 ```
 ┌──────────────┐         ┌──────────────┐         ┌──────────────┐
-│    Editor     │◄──TCP──►│              │◄──TCP──►│   debugpy    │
-│  (source      │   DAP   │   dap-mux    │   DAP   │  (or any     │
-│   display)    │         │              │         │   DA server) │
+│    Helix      │◄──DAP──►│              │◄──DAP──►│   debugpy    │
+│  source view  │         │   dap-mux    │         │  (or any     │
+│  breakpoints  │         │              │         │   DA server) │
 └──────────────┘         │              │         └──────────────┘
                           │              │
 ┌──────────────┐         │              │
-│  IPython      │◄──TCP──►│              │
-│  REPL         │   DAP   │              │
-│  (control)    │         └──────────────┘
+│   IPython     │◄──DAP──►│              │
+│  evaluation   │         └──────────────┘
+│  stepping     │
 └──────────────┘
 ```
 
-The editor is a *display*. The REPL is the *control surface*. Both are first-class DAP clients.
+dap-mux is a DAP proxy. It sits between a debug adapter and multiple clients, routing requests, broadcasting events, and replaying session state to clients that join late. Your editor and your REPL are both first-class DAP clients sharing one session through the multiplexer.
 
 ## Status
 
-Early development. The core architecture works — protocol framing, seq rewriting, multi-client support, event broadcasting, debugpy lifecycle, and IPython magics are all implemented and tested. Not yet battle-tested with real debugging sessions.
+Works. Tested live with Helix + debugpy + IPython. The core proxy — protocol framing, sequence rewriting, multi-client routing, event broadcasting, late-join state replay — is solid and covered by tests. Not yet on PyPI; install from source.
 
 ## Requirements
 
-* **Python 3.14+** for running dap-mux itself
-* **debugpy** installed in the *target's* environment (dap-mux talks to it over TCP, never imports it)
+[uv](https://docs.astral.sh/uv/) — it manages the Python runtime automatically.
+
+debugpy must be available in the *target* environment. dap-mux connects to it over TCP and never imports it directly:
+
+```
+pip install debugpy    # in your project's virtualenv
+```
 
 ## Installation
 
-dap-mux is not yet on PyPI. Install from source:
+```
+uv tool install git+https://github.com/wolf/dap-mux --with debugpy
+```
+
+For development:
 
 ```
-# With uv (recommended)
-uv tool install git+https://github.com/USER/dap-mux.git
-
-# Or clone and install in development mode
-git clone https://github.com/USER/dap-mux.git
+git clone https://github.com/wolf/dap-mux
 cd dap-mux
 uv sync --group dev
 ```
 
-Make sure debugpy is available to your target script:
-
-```
-pip install debugpy    # in the target's virtualenv
-```
-
 ## Quick Start
 
-**Terminal 1 — start dap-mux and the REPL:**
+This example uses Helix. Any DAP-capable editor works — see [Editor Setup](#editor-setup).
+
+**1. Start the session**
 
 ```
-dmux target.py
+dmux script.py
 ```
 
-This spawns debugpy attached to `target.py`, starts the multiplexer, and prints the port:
+dap-mux spawns debugpy, connects the multiplexer, and opens an IPython REPL:
 
 ```
 dap-mux listening on 127.0.0.1:5679
 Connect your editor to 127.0.0.1:5679
 ```
 
-**Terminal 2 — connect your editor:**
+The IPython prompt appears. The script is paused — it won't start running until an editor client sends `configurationDone`.
 
-* **Helix:** `:debug-remote 127.0.0.1:5679 attach`
-* **Neovim:** configure nvim-dap to attach to `127.0.0.1:5679`
-* **Emacs:** configure dap-mode to attach to `127.0.0.1:5679`
-* **Vim:** configure Vimspector to attach to `127.0.0.1:5679`
+**2. Set breakpoints in Helix, then connect**
 
-Set breakpoints in your editor. When execution hits one, both the editor and the REPL are notified — the editor highlights the line, and the REPL prints the stop location.
-
-**Back in Terminal 1 — use IPython magics to debug:**
+Open the script in Helix and set a breakpoint on the line you want to pause on (`<space>b` or your configured key). Then connect:
 
 ```
-%step              # step into
-%next              # step over
-%continue_         # continue execution
-%finish            # step out
-%eval x + 1        # evaluate in the debuggee's frame
-%bt                # show backtrace
-%frame 2           # select a stack frame
-%break app.py:42   # set a breakpoint
-%clear app.py:42   # remove breakpoints from file
+:debug-remote 127.0.0.1:5679 attach
 ```
 
-Bare Python at the prompt runs locally in IPython. `%eval` evaluates in the debuggee. Both are useful.
+> **Set breakpoints before connecting.** When Helix connects it sends `configurationDone`, which starts the script. With no breakpoints, the script runs to completion before you can do anything.
+
+Execution starts and pauses at your breakpoint. Helix highlights the current line. IPython prints the stop location.
+
+**3. Debug from IPython**
+
+```python
+%bt              # call stack
+%eval results    # evaluate expression in the stopped frame
+%frame 2         # switch to a different stack frame (%eval follows)
+%n               # step over
+%s               # step into
+%c               # continue
+%finish          # step out
+%break script.py:42   # set a breakpoint
+```
+
+Bare Python at the IPython prompt runs locally. `%eval` evaluates in the debuggee's frame.
+
+---
 
 ## Usage
 
 ### Launch mode
 
 ```
-dmux target.py
+dmux script.py
 ```
 
-dap-mux spawns debugpy, starts the multiplexer, and opens the REPL. Everything in one command.
+Spawns debugpy attached to `script.py`, starts the multiplexer, opens the IPython REPL. Everything in one command.
 
 ### Attach mode
 
-When debugpy is already running (e.g. a Flask or Django server):
+When debugpy is already running:
 
 ```
-dmux --attach 5678            # localhost:5678
-dmux --attach 192.168.1.5:5678  # remote host
+dmux --attach 5678
+dmux --attach 192.168.1.10:5678
 ```
 
-### CLI options
+The IPython REPL connects to the existing session. Use `%sync` to discover the current stopped state if the session was already paused when you joined.
+
+### Headless mode
+
+Run the multiplexer without the REPL — useful for scripted setups or when connecting an external IPython:
 
 ```
-dmux --help
+dmux script.py --no-repl
+dmux --attach 5678 --no-repl
+```
+
+### CLI reference
+
+```
+dmux [TARGET] [OPTIONS]
+
+Arguments:
+  TARGET                   Python script to debug (launch mode)
 
 Options:
-  --attach, -a TEXT      Attach to an already-running debug adapter ([host:]port)
-  --mux-port, -p INT     Port for DAP clients to connect to (0 = auto) [default: 0]
-  --log-level, -l TEXT    Log level (DEBUG, INFO, WARNING, ERROR) [default: WARNING]
-  --log-file TEXT         Also write logs to this file
-  --no-repl              Start the multiplexer without the IPython REPL
-  --version, -V          Show version and exit
-  --help                 Show this message and exit
+  --attach, -a  TEXT       Attach to a running debug adapter ([host:]port)
+  --mux-port, -p  INT      Port for clients to connect to (0 = auto)  [default: 0]
+  --log-level, -l  TEXT    Log level: DEBUG, INFO, WARNING, ERROR  [default: WARNING]
+  --log-file  TEXT         Also write logs to this file
+  --no-repl                Start without the IPython REPL
+  --version, -V            Show version and exit
 ```
 
-### IPython extension
+---
 
-The extension loads automatically when dap-mux starts the REPL. To load it manually in an existing IPython session:
+## Editor Setup
 
+### Helix
+
+Add to `~/.config/helix/languages.toml`:
+
+```toml
+[[language]]
+name = "python"
+
+[language.debugger]
+name = "debugpy"
+transport = "tcp"
+command = "python3"
+args = ["-m", "debugpy"]
+port-arg = "--listen=127.0.0.1:{}"
+
+[[language.debugger.templates]]
+name = "launch"
+request = "launch"
+completion = [{ name = "script", completion = "filename" }]
+args = { mode = "debug", program = "{0}" }
+
+[[language.debugger.templates]]
+name = "attach"
+request = "attach"
+completion = []
+args = {}
 ```
-%load_ext dap_mux.ipython_ext
-%connect 5679
-```
+
+Connect to a running dap-mux with `:debug-remote host:port attach`.
+
+### Neovim
+
+Configure nvim-dap to connect to the mux port as a DAP server. Point `dap.adapters` at `127.0.0.1:<mux-port>` with `type = "server"`.
+
+### Other editors
+
+Any editor with a DAP client works. Configure it to connect to `127.0.0.1:<mux-port>` as an existing DAP server — dap-mux speaks standard DAP, no special configuration needed.
+
+---
+
+## IPython Magics
 
 | Magic | Alias | Description |
 |---|---|---|
-| `%connect host:port` | | Connect to the multiplexer |
+| `%connect [host:]port` | | Connect to the multiplexer |
 | `%disconnect` | | Disconnect |
+| `%sync` | | Discover current stopped state (useful after late-joining a paused session) |
+| `%bt` | | Call stack |
+| `%frame N` | | Select stack frame; subsequent `%eval` evaluates in that frame's scope |
+| `%eval expr` | | Evaluate expression in the current frame |
 | `%step` | `%s` | Step into |
 | `%next` | `%n` | Step over |
 | `%continue_` | `%c` | Continue execution |
 | `%finish` | | Step out of current function |
-| `%eval expr` | | Evaluate expression in debuggee's frame |
-| `%bt` | | Show backtrace |
-| `%frame N` | | Select stack frame by index |
-| `%break file:line [cond]` | | Set breakpoint (with optional condition) |
-| `%clear file:line` | | Remove breakpoints from file |
+| `%break file:line [cond]` | | Set breakpoint (optional condition) |
+| `%clear file:line` | | Remove all breakpoints in file |
+
+`%eval` evaluates in the debuggee's frame — it has access to the local and global variables at the current stop point. Regular IPython expressions evaluate locally.
+
+---
+
+## How It Works
+
+Each DAP client (editor, REPL) connects to dap-mux over TCP. The multiplexer rewrites sequence numbers so all clients share a single upstream connection to the debug adapter. Responses are routed back to the client that made the request. Events are broadcast to all connected clients.
+
+When a client joins after the session is already initialized, dap-mux replays the cached `initialized` event and, if the session is currently stopped, the last `stopped` event — so the late joiner sees current state immediately without requiring an adapter restart.
+
+dap-mux is written in Python. The tool is a network I/O router — it reads JSON from one TCP connection and writes it to others — and Python's `asyncio` is purpose-built for exactly this. The actual performance ceiling is human keystroke speed; the multiplexer will never be CPU-bound. The IPython integration is the other reason: it runs in the same process, with direct access to IPython's internals. A Go or Rust implementation would have to shell out to Python and do IPC to achieve the same result, trading a clean in-process design for a messy out-of-process one.
+
+---
+
+## Who This Is For
+
+* **Terminal-first developers** using Helix, Neovim, Emacs, or any DAP-capable editor who want IDE-quality debugging without leaving the terminal
+* **Data scientists** who live in IPython and want visual source tracking while debugging
+* **Remote developers** debugging over SSH where GUI IDEs are impractical
+* **Anyone** who has wished their debug REPL had tab completion, history, and the ability to `import` things
+
+---
 
 ## Compatibility
 
-dap-mux is protocol-agnostic — it speaks DAP, not any specific language or editor. Any editor from the first table can pair with any language from the second through the multiplexer.
-
 ### Editors
 
-Any DAP-capable editor works as the display side with zero configuration beyond pointing at the multiplexer's port.
+Any DAP-capable editor works as a display client — connect it to the mux port like any other DAP server.
 
-| Editor | DAP integration | Maturity |
-|---|---|---|
-| **Neovim** | [nvim-dap](https://github.com/mfussenegger/nvim-dap) plugin | Stable |
-| **Helix** | Built-in | Experimental |
-| **Emacs** | [dap-mode](https://github.com/emacs-lsp/dap-mode) plugin | Stable |
-| **Vim** | [Vimspector](https://github.com/puremourning/vimspector) plugin | Stable |
-| **Kakoune** | [kak-dap](https://github.com/jdugan6240/kak-dap) plugin | Experimental |
-
-GUI editors (VS Code, Zed, etc.) also work — they speak the same protocol.
+| Editor | DAP integration |
+|---|---|
+| **Helix** | Built-in |
+| **Neovim** | [nvim-dap](https://github.com/mfussenegger/nvim-dap) |
+| **Emacs** | [dap-mode](https://github.com/emacs-lsp/dap-mode) |
+| **Vim** | [Vimspector](https://github.com/puremourning/vimspector) |
+| **VS Code** | Built-in |
 
 ### Languages
 
-The REPL+editor workflow requires a language with both a debug adapter and a meaningful interactive REPL. The multiplexer itself works with any DAP adapter regardless of REPL availability.
+The REPL + editor workflow is richest for languages with a capable interactive REPL. The multiplexer itself works with any DAP adapter.
 
 | Language | Debug adapter | REPL |
 |---|---|---|
-| **Python** | [debugpy](https://github.com/microsoft/debugpy) (Microsoft) | IPython |
-| **Ruby** | [debug](https://github.com/ruby/debug) gem (core team) | IRB, Pry |
+| **Python** | [debugpy](https://github.com/microsoft/debugpy) | IPython ← tested |
+| **Ruby** | [debug](https://github.com/ruby/debug) gem | IRB, Pry |
 | **Julia** | [DebugAdapter.jl](https://github.com/julia-vscode/DebugAdapter.jl) | Julia REPL |
 | **Elixir** | [ElixirLS](https://github.com/elixir-lsp/elixir-ls) | IEx |
-| **JavaScript/TypeScript** | [js-debug](https://github.com/microsoft/vscode-js-debug) (Microsoft) | Node.js REPL |
-| **Clojure** | [cider-nrepl](https://github.com/clojure-emacs/cider-nrepl) | nREPL |
-| **R** | [vscDebugger](https://github.com/ManuelHentworking/VSCode-R-Debugger) | radian |
-| **Scala** | [scala-debug-adapter](https://github.com/scalacenter/scala-debug-adapter) (Scala Center) | Ammonite |
-| **PHP** | [Xdebug](https://xdebug.org/) via [vscode-php-debug](https://github.com/xdebug/vscode-php-debug) | PsySH |
-| **Haskell** | [haskell-debug-adapter](https://github.com/phoityne/haskell-debug-adapter) | GHCi |
-| **OCaml** | [earlybird](https://github.com/hackwaly/ocamlearlybird) | utop |
-| **Common Lisp** | [alive](https://github.com/nobody-famous/alive) | SLIME/SLY |
-| **Racket** | [Magic Racket](https://github.com/Eugleo/magic-racket) | Racket REPL |
-| **Java** | [java-debug](https://github.com/microsoft/java-debug) (Microsoft) | JShell |
-| **C#** | [netcoredbg](https://github.com/Samsung/netcoredbg) (Samsung) | dotnet interactive |
+| **JavaScript** | [js-debug](https://github.com/microsoft/vscode-js-debug) | Node.js REPL |
 
-Languages like Go (Delve), Rust (CodeLLDB), C/C++ (lldb-dap), and Swift (lldb-dap) have good DAP support but no meaningful REPL — they still work with the multiplexer for multi-editor scenarios.
+Languages with strong DAP support but no meaningful REPL — Go (Delve), Rust (codelldb), C/C++ (lldb-dap) — still benefit from dap-mux for multi-editor sessions and reconnection without restarting.
 
-dap-mux is currently tested only against debugpy (Python). Other adapters should work but are unvalidated. Reports and patches welcome.
+dap-mux is tested against debugpy. Other adapters should work (DAP is a standard protocol) but are unvalidated.
+
+---
 
 ## Limitations
 
-* **Early development.** The core proxy architecture is validated (via spike), but the full tool is not yet built.
-* **Tested with debugpy only.** Other debug adapters should work (DAP is a standard protocol) but are not yet validated.
-* **Terminal-first by design.** There is no GUI and there won't be one. If you want a graphical debugger, use one — they're good.
+* **Tested with debugpy only.** Other debug adapters should work but haven't been validated.
+* **No PyPI release yet.** Install from source via `uv tool install git+...`.
+* **IPython REPL is Python-specific.** The multiplexer is language-agnostic; the REPL integration is not.
+* **Terminal-first by design.** No GUI, no plans for one.
+
+---
 
 ## License
 
@@ -227,4 +274,4 @@ dap-mux is currently tested only against debugpy (Python). Other adapters should
 
 ## Contributing
 
-Not yet accepting contributions — the project is in early development. Watch this space.
+Issues and feedback welcome. The project is young — bug reports and notes on adapters or editors you've tested are especially useful.
