@@ -35,6 +35,3 @@ htmlcov/
 
 # Spike artifacts (not part of the project)
 SPIKE-CONCLUSIONS.md
-
-# Demo scripts (not part of the project)
-fibonacci.py

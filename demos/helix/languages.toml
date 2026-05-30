@@ -1,0 +1,21 @@
+[[language]]
+name = "python"
+
+[language.debugger]
+name = "debugpy"
+transport = "tcp"
+command = "python3"
+args = ["-m", "debugpy"]
+port-arg = "--listen=127.0.0.1:{}"
+
+[[language.debugger.templates]]
+name = "launch"
+request = "launch"
+completion = [{ name = "script", completion = "filename" }]
+args = { mode = "debug", program = "{0}" }
+
+[[language.debugger.templates]]
+name = "attach"
+request = "attach"
+completion = []
+args = {}

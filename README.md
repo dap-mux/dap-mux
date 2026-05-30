@@ -1,8 +1,8 @@
 # dap-mux
 
-Every terminal debugger forces a choice: a REPL with full evaluation power but no source context, or an editor with visual breakpoints but a crippled debug console. dap-mux removes that choice.
+Every terminal debugger forces a choice: a REPL with full evaluation power but no source context, or an editor with visual breakpoints but a crippled debug console. dap-mux removes the need to choose.
 
-Connect your editor and IPython to the same debug session simultaneously. Step from IPython while your editor tracks the current line. Evaluate arbitrary expressions in the stopped frame. Set breakpoints from either side.
+Connect your editor and your REPL to the same debug session simultaneously. Step from your REPL while your editor tracks the current line. Evaluate arbitrary expressions in the stopped frame. Set breakpoints from either side.
 
 ```
 ┌──────────────┐         ┌──────────────┐         ┌──────────────┐
@@ -12,7 +12,7 @@ Connect your editor and IPython to the same debug session simultaneously. Step f
 └──────────────┘         │              │         └──────────────┘
                           │              │
 ┌──────────────┐         │              │
-│   IPython     │◄──DAP──►│              │
+│  your REPL    │◄──DAP──►│              │
 │  evaluation   │         └──────────────┘
 │  stepping     │
 └──────────────┘
@@ -20,9 +20,29 @@ Connect your editor and IPython to the same debug session simultaneously. Step f
 
 dap-mux is a DAP proxy. It sits between a debug adapter and multiple clients, routing requests, broadcasting events, and replaying session state to clients that join late. Your editor and your REPL are both first-class DAP clients sharing one session through the multiplexer.
 
+The bundled REPL frontend is an IPython extension — a debug control surface that gives IPython's `%magic` interface DAP connectivity. It's the REPL the author uses. Other REPLs can connect to the multiplexer too; they just don't have a built-in frontend yet.
+
+## Goals
+
+**Your** editor + **your** language + **your** debugger + **your** REPL — and anything else you want to connect. Your tool choices should compose freely. dap-mux is the connector; the tools are yours.
+
+The commitments that follow from this:
+
+**Standard DAP at every boundary.** Any DAP-capable editor, REPL, or tool connects to the client-facing interface without special plugins or configuration. Any standard DAP adapter works upstream. Every connection point speaks the standard.
+
+**Every connected client is first-class.** All clients can perform any standard DAP operation: set breakpoints, step, evaluate expressions, inspect the call stack, select frames. No client is read-only.
+
+**Sessions survive client changes.** Connecting or disconnecting a client never interrupts the session or restarts the adapter. Connect a second editor mid-session. Disconnect the REPL and reconnect. The session continues.
+
+**Late joiners see current state.** A client connecting after initialization receives the initialized handshake and, if stopped, the current stop position. An editor joined mid-session immediately shows the correct line.
+
 ## Status
 
-Works. Tested live with Helix + debugpy + IPython. The core proxy — protocol framing, sequence rewriting, multi-client routing, event broadcasting, late-join state replay — is solid and covered by tests. Not yet on PyPI; install from source.
+dap-mux works. The core mechanics — protocol framing, sequence rewriting, multi-client routing, event broadcasting, late-join state replay — have been tested live and are covered by a test suite. The workflow it enables is real: connect Helix or VS Code and a REPL to the same debugpy session and debug from both simultaneously.
+
+That's two editors, one debug adapter, one REPL, on two platforms. The goals call for any editor, any language, any adapter — and most of that territory is unproven. This is the beginning of the tool being useful, not the end. Bug reports, notes from people testing other combinations, and contributions that expand the proven ground are what move it forward.
+
+Not yet on PyPI; install from source.
 
 ## Requirements
 
@@ -37,20 +57,20 @@ pip install debugpy    # in your project's virtualenv
 ## Installation
 
 ```
-uv tool install git+https://github.com/wolf/dap-mux --with debugpy
+uv tool install git+https://github.com/dap-mux/dap-mux --with debugpy
 ```
 
 For development:
 
 ```
-git clone https://github.com/wolf/dap-mux
+git clone https://github.com/dap-mux/dap-mux
 cd dap-mux
 uv sync --group dev
 ```
 
 ## Quick Start
 
-This example uses Helix. Any DAP-capable editor works — see [Editor Setup](#editor-setup).
+This example uses Helix and the built-in IPython frontend. Any DAP-capable editor works — see [Editor Setup](#editor-setup).
 
 **1. Start the session**
 
@@ -177,6 +197,33 @@ args = {}
 
 Connect to a running dap-mux with `:debug-remote host:port attach`.
 
+A working copy of this configuration is in [`demos/helix/`](demos/helix/).
+
+### VS Code
+
+Install the [Python Debugger](https://marketplace.visualstudio.com/items?itemName=ms-python.debugpy) extension (`ms-python.debugpy`), then add to `.vscode/launch.json`:
+
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Connect to dap-mux",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "127.0.0.1",
+                "port": 5679
+            }
+        }
+    ]
+}
+```
+
+Start dap-mux with a pinned port (`dmux script.py -p 5679`) so the launch config can hardcode it. Set breakpoints in VS Code before running the configuration — launching it sends `configurationDone` and starts execution.
+
+A working copy of this configuration is in [`demos/vscode/`](demos/vscode/).
+
 ### Neovim
 
 Configure nvim-dap to connect to the mux port as a DAP server. Point `dap.adapters` at `127.0.0.1:<mux-port>` with `type = "server"`.
@@ -187,7 +234,9 @@ Any editor with a DAP client works. Configure it to connect to `127.0.0.1:<mux-p
 
 ---
 
-## IPython Magics
+## IPython Extension
+
+dap-mux ships with an IPython extension that turns IPython into a debug control surface. Load it with `%load_ext dap_mux`, or use `dmux` which loads it automatically.
 
 | Magic | Alias | Description |
 |---|---|---|
@@ -233,13 +282,13 @@ dap-mux is written in Python. The tool is a network I/O router — it reads JSON
 
 Any DAP-capable editor works as a display client — connect it to the mux port like any other DAP server.
 
-| Editor | DAP integration |
-|---|---|
-| **Helix** | Built-in |
-| **Neovim** | [nvim-dap](https://github.com/mfussenegger/nvim-dap) |
-| **Emacs** | [dap-mode](https://github.com/emacs-lsp/dap-mode) |
-| **Vim** | [Vimspector](https://github.com/puremourning/vimspector) |
-| **VS Code** | Built-in |
+| Editor | DAP integration | Status |
+|---|---|---|
+| **Helix** | Built-in | Tested |
+| **VS Code** | Built-in | Tested |
+| **Neovim** | [nvim-dap](https://github.com/mfussenegger/nvim-dap) | Untested |
+| **Emacs** | [dap-mode](https://github.com/emacs-lsp/dap-mode) | Untested |
+| **Vim** | [Vimspector](https://github.com/puremourning/vimspector) | Untested |
 
 ### Languages
 
@@ -257,14 +306,33 @@ Languages with strong DAP support but no meaningful REPL — Go (Delve), Rust (c
 
 dap-mux is tested against debugpy. Other adapters should work (DAP is a standard protocol) but are unvalidated.
 
+### Platforms
+
+| Platform | Status |
+|---|---|
+| **Linux** | Tested |
+| **macOS** | Tested |
+| **Windows** | Intended; not yet validated |
+
 ---
+
+## What this is not
+
+**dap-mux is a router, not a debugger.** It forwards DAP messages between your tools and your debug adapter. It does not execute code, inspect memory, or understand the state of your program. Everything it connects already does those things — dap-mux provides the connectivity, not the capability.
+
+**It does not add debugging features your adapter doesn't already have.** If your debug adapter doesn't support something, dap-mux won't supply it. The power comes from the tools you bring. dap-mux connects them.
+
+**Terminal-first by design.** There is no GUI and there won't be — and on the command line, the only real interaction is starting it. After that, you're working in your editor and your REPL, not in dap-mux.
+
+**The IPython extension is Python-specific.** The multiplexer works with any language that has a DAP adapter. The bundled REPL integration is built on IPython and is Python-only. Other language REPLs are possible frontends, but they aren't built in.
+
+**dap-mux is one component in a pipeline, not an all-in-one tool.** If you want a self-contained TUI debugger with its own UI, [pudb](https://github.com/inducer/pudb) is excellent and actively maintained. dap-mux is for a different way of working: your editor does one thing well, your REPL does one thing well, your debug adapter does one thing well — dap-mux connects them. Unix has always worked this way.
 
 ## Limitations
 
 * **Tested with debugpy only.** Other debug adapters should work but haven't been validated.
+* **Windows support is untested.** The code has no known platform-specific dependencies, but it hasn't been validated on Windows yet.
 * **No PyPI release yet.** Install from source via `uv tool install git+...`.
-* **IPython REPL is Python-specific.** The multiplexer is language-agnostic; the REPL integration is not.
-* **Terminal-first by design.** No GUI, no plans for one.
 
 ---
 
@@ -275,3 +343,5 @@ dap-mux is tested against debugpy. Other adapters should work (DAP is a standard
 ## Contributing
 
 Issues and feedback welcome. The project is young — bug reports and notes on adapters or editors you've tested are especially useful.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to set up a development environment, what makes a good PR, and what the project will and won't accept. See [CHANGELOG.md](CHANGELOG.md) for what has changed.
