@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9.2 (2026-05-30)
+
+Fix publish workflow permissions so the build job can check out the repository.
+
+**Internal:**
+* Add `contents: read` permission to the build job in `publish.yml` — required when the top-level workflow sets `permissions: {}`
+
 ## v0.9.1 (2026-05-30)
 
 Update installation instructions now that dap-mux is on PyPI.

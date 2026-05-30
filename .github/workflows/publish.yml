@@ -11,6 +11,8 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read  # required for checkout
     steps:
       - uses: actions/checkout@v4
         with:
