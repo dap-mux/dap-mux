@@ -57,7 +57,7 @@ pip install debugpy    # in your project's virtualenv
 ## Installation
 
 ```
-uv tool install git+https://github.com/dap-mux/dap-mux --with debugpy
+uv tool install dap-mux
 ```
 
 For development:
@@ -332,7 +332,6 @@ dap-mux is tested against debugpy. Other adapters should work (DAP is a standard
 
 * **Tested with debugpy only.** Other debug adapters should work but haven't been validated.
 * **Windows support is untested.** The code has no known platform-specific dependencies, but it hasn't been validated on Windows yet.
-* **No PyPI release yet.** Install from source via `uv tool install git+...`.
 
 ---
 

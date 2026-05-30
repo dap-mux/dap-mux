@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.1 (2026-05-30)
+
+Update installation instructions now that dap-mux is on PyPI.
+
+**Documentation:**
+* Installation command is now `uv tool install dap-mux`
+* Remove "not yet on PyPI" from Limitations
+
 ## v0.9.0 (2026-05-30)
 
 First release. The core multiplexer is complete and live-tested: connect Helix or VS Code and an IPython REPL to the same debugpy session and debug from both simultaneously.
