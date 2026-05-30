@@ -38,11 +38,11 @@ The commitments that follow from this:
 
 ## Status
 
-dap-mux works. The core mechanics — protocol framing, sequence rewriting, multi-client routing, event broadcasting, late-join state replay — have been tested live and are covered by a test suite. The workflow it enables is real: connect Helix or VS Code and a REPL to the same debugpy session and debug from both simultaneously.
+v0.9.0 is the first public release — the first time it has been possible for anyone other than the author to run this tool. Until now it has been developed and tested privately.
 
-That's two editors, one debug adapter, one REPL, on two platforms. The goals call for any editor, any language, any adapter — and most of that territory is unproven. This is the beginning of the tool being useful, not the end. Bug reports, notes from people testing other combinations, and contributions that expand the proven ground are what move it forward.
+The core mechanics — protocol framing, sequence rewriting, multi-client routing, event broadcasting, late-join state replay — have been tested live and are covered by a test suite. The workflow it enables is real: connect Helix or VS Code and an IPython REPL to the same debugpy session and debug from both simultaneously.
 
-Not yet on PyPI; install from source.
+That's two editors, one debug adapter, one REPL, on two platforms. The goals call for any editor, any language, any adapter — and most of that territory has never been touched by anyone. There is much to find and fix. Bug reports, notes from people testing other combinations, and contributions that expand the proven ground are exactly what this project needs right now.
 
 ## Requirements
 
