@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.9.3 (2026-05-31)
+
+Add `--headless` flag and document non-Python workflows.
+
+**Features:**
+* `--headless` replaces `--no-repl` as the preferred flag for starting without the IPython REPL
+* `--no-repl` still works but prints a deprecation warning
+
+**Documentation:**
+* Headless mode section rewritten to explain what gets launched where and how to use dap-mux with other languages
+* Ruby/rdbg example showing the attach + headless workflow
+* Notes that REPL frontends for other languages are the next contribution opportunity
+
 ## v0.9.2 (2026-05-30)
 
 Fix publish workflow permissions so the build job can check out the repository.
