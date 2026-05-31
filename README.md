@@ -139,12 +139,35 @@ The IPython REPL connects to the existing session. Use `%sync` to discover the c
 
 ### Headless mode
 
-Run the multiplexer without the REPL — useful for scripted setups or when connecting an external IPython:
+Use `--headless` to start the multiplexer without the IPython REPL. Connect your own tools — any editor, any REPL frontend that speaks DAP.
 
 ```
-dmux script.py --no-repl
-dmux --attach 5678 --no-repl
+dmux script.py --headless
+dmux --attach 5678 --headless
 ```
+
+**What launches what:**
+
+In launch mode (`dmux script.py --headless`), dap-mux spawns debugpy attached to the Python script, starts the multiplexer, and waits. You connect your own clients.
+
+In attach mode (`dmux --attach host:port --headless`), dap-mux connects to an already-running debug adapter — any language, any adapter. *You* are responsible for starting the adapter first.
+
+**Using dap-mux with another language**
+
+The multiplexer speaks standard DAP and works with any debug adapter. Here is a Ruby example using [rdbg](https://github.com/ruby/debug):
+
+```
+# Terminal 1 — start the Ruby debug adapter
+rdbg --open --port 5678 script.rb
+
+# Terminal 2 — start the multiplexer
+dmux --attach 5678 --headless
+# dap-mux listening on 127.0.0.1:5679
+
+# Now connect your editor to 127.0.0.1:5679 as a DAP server
+```
+
+Any DAP-capable editor connects immediately. A REPL frontend — the equivalent of the IPython extension for Ruby, Julia, or another language — does not exist yet and needs to be built. The multiplexer is ready; the frontend is the contribution.
 
 ### CLI reference
 
@@ -159,7 +182,7 @@ Options:
   --mux-port, -p  INT      Port for clients to connect to (0 = auto)  [default: 0]
   --log-level, -l  TEXT    Log level: DEBUG, INFO, WARNING, ERROR  [default: WARNING]
   --log-file  TEXT         Also write logs to this file
-  --no-repl                Start without the IPython REPL
+  --headless               Start without the IPython REPL
   --version, -V            Show version and exit
 ```
 

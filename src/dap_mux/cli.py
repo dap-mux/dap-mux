@@ -74,9 +74,13 @@ def main(
         str | None,
         typer.Option("--log-file", help="Also write logs to this file."),
     ] = None,
+    headless: Annotated[
+        bool,
+        typer.Option("--headless", help="Start the multiplexer without the IPython REPL."),
+    ] = False,
     no_repl: Annotated[
         bool,
-        typer.Option("--no-repl", help="Start the multiplexer without the IPython REPL."),
+        typer.Option("--no-repl", help="Deprecated: use --headless.", hidden=True),
     ] = False,
     version: Annotated[  # noqa: ARG001
         bool,
@@ -91,10 +95,14 @@ def main(
         typer.echo("Error: --attach and a target script are mutually exclusive.", err=True)
         raise typer.Exit(code=2)
 
+    if no_repl and not headless:
+        typer.echo("Warning: --no-repl is deprecated, use --headless instead.", err=True)
+        headless = True
+
     _configure_logging(log_level, log_file)
 
     try:
-        if no_repl:
+        if headless:
             asyncio.run(_run_headless(target, attach, mux_port))
         else:
             _run_with_repl(target, attach, mux_port)
