@@ -40,25 +40,38 @@ The commitments that follow from this:
 
 v0.9.0 is the first public release — the first time it has been possible for anyone other than the author to run this tool. Until now it has been developed and tested privately.
 
-The core mechanics — protocol framing, sequence rewriting, multi-client routing, event broadcasting, late-join state replay — have been tested live and are covered by a test suite. The workflow it enables is real: connect Helix or VS Code and an IPython REPL to the same debugpy session and debug from both simultaneously.
+The core mechanics — protocol framing, sequence rewriting, multi-client routing, event broadcasting, late-join state replay — have been tested live and are covered by a test suite. Combinations confirmed working:
 
-That's two editors, one debug adapter, one REPL, on two platforms. The goals call for any editor, any language, any adapter — and most of that territory has never been touched by anyone. There is much to find and fix. Bug reports, notes from people testing other combinations, and contributions that expand the proven ground are exactly what this project needs right now.
+* **Python + debugpy** — Helix, VS Code, and an IPython REPL sharing the same session simultaneously
+* **Rust + codelldb** — Helix and [dap-observer](https://github.com/shaleh/dap-observer) connected to the same codelldb session
 
-## Requirements
+That's two languages, two debug adapters, two editors, one REPL observer, on macOS. The goals call for any editor, any language, any adapter — and most of that territory has never been touched by anyone. There is much to find and fix. Bug reports, notes from people testing other combinations, and contributions that expand the proven ground are exactly what this project needs right now.
 
-[uv](https://docs.astral.sh/uv/) — it manages the Python runtime automatically.
+## Ecosystem
 
-debugpy must be available in the *target* environment. dap-mux connects to it over TCP and never imports it directly:
+dap-mux is built on a conviction borrowed from Unix: a healthy toolchain is made of small, focused programs that compose freely rather than one monolith that does everything. The multiplexer is the connector — the useful work happens at the boundaries, in the tools around it.
 
-```
-pip install debugpy    # in your project's virtualenv
-```
+The community is starting to build those tools. [dap-observer](https://github.com/shaleh/dap-observer), written by Sean Perry, is a read-only DAP client that connects to a running dap-mux session and renders the current stack frame's variables as a navigable terminal tree. It does one thing and does it well — exactly the kind of contribution this ecosystem is designed to encourage.
+
+If you've built something that works with dap-mux, open an issue or PR to have it listed here.
+
+---
 
 ## Installation
 
+[uv](https://docs.astral.sh/uv/) is the recommended installer — it manages the Python runtime automatically, keeping it completely out of your way.
+
+**Any language (headless):**
 ```
 uv tool install dap-mux
 ```
+
+**Python with IPython REPL:**
+```
+uv tool install 'dap-mux[ipython]'
+```
+
+The `[ipython]` extra adds the built-in IPython frontend. Without it, dap-mux runs headless and works with any debug adapter — connect your own editor and tools.
 
 For development:
 
@@ -70,7 +83,13 @@ uv sync --group dev
 
 ## Quick Start
 
-This example uses Helix and the built-in IPython frontend. Any DAP-capable editor works — see [Editor Setup](#editor-setup).
+This example uses the built-in IPython frontend (`dap-mux[ipython]`) and Helix. Any DAP-capable editor works — see [Editor Setup](#editor-setup).
+
+debugpy must be available in the *target* environment:
+
+```
+pip install debugpy    # in your project's virtualenv
+```
 
 **1. Start the session**
 
@@ -320,14 +339,14 @@ The REPL + editor workflow is richest for languages with a capable interactive R
 | Language | Debug adapter | REPL |
 |---|---|---|
 | **Python** | [debugpy](https://github.com/microsoft/debugpy) | IPython ← tested |
+| **Rust** | [codelldb](https://github.com/vadimcn/codelldb) | — ← tested |
+| **Go** | [Delve](https://github.com/go-delve/delve) | — |
 | **Ruby** | [debug](https://github.com/ruby/debug) gem | IRB, Pry |
 | **Julia** | [DebugAdapter.jl](https://github.com/julia-vscode/DebugAdapter.jl) | Julia REPL |
 | **Elixir** | [ElixirLS](https://github.com/elixir-lsp/elixir-ls) | IEx |
 | **JavaScript** | [js-debug](https://github.com/microsoft/vscode-js-debug) | Node.js REPL |
 
 Languages with strong DAP support but no meaningful REPL — Go (Delve), Rust (codelldb), C/C++ (lldb-dap) — still benefit from dap-mux for multi-editor sessions and reconnection without restarting.
-
-dap-mux is tested against debugpy. Other adapters should work (DAP is a standard protocol) but are unvalidated.
 
 ### Platforms
 
@@ -353,7 +372,7 @@ dap-mux is tested against debugpy. Other adapters should work (DAP is a standard
 
 ## Limitations
 
-* **Tested with debugpy only.** Other debug adapters should work but haven't been validated.
+* **Tested with debugpy and codelldb.** Other debug adapters should work but haven't been validated.
 * **Windows support is untested.** The code has no known platform-specific dependencies, but it hasn't been validated on Windows yet.
 
 ---

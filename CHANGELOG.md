@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.10.0 (2026-06-04)
+
+IPython is now an optional extra, not a required dependency.
+
+**Breaking changes:**
+* `uv tool install dap-mux` no longer includes IPython. Install `dap-mux[ipython]` for the Python + IPython workflow. Headless mode and all non-Python workflows are unaffected.
+
+**Fixes:**
+* Eliminated the spurious "Timed out waiting for attach response" error on startup in launch mode.
+
+**Documentation:**
+* `uv tool install` is now the recommended and primary installation method.
+* New Ecosystem section — [dap-observer](https://github.com/shaleh/dap-observer) by Sean Perry is the first third-party tool built for this ecosystem.
+* Rust (codelldb) and VS Code added to the tested combinations.
+
 ## v0.9.5 (2026-06-04)
 
 Rename CLI entry point and add Rust demo.
