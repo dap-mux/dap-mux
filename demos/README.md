@@ -10,7 +10,14 @@ Computes Fibonacci numbers in a loop, printing each result. Good breakpoint
 targets: the top of `compute()` to watch recursive state, or the `print` line
 in `main()` to stop between iterations.
 
-## Running a session
+## rust/
+
+A Dijkstra's shortest path implementation as a Rust debug target. Demonstrates
+dap-mux with codelldb and
+[dap-observer](https://github.com/shaleh/dap-observer), a terminal UI variable
+watcher. See `rust/README.md` for the full workflow.
+
+## Running a session (Python/fibonacci)
 
 **1. Start dap-mux with a pinned port:**
 

@@ -1,0 +1,14 @@
+[[language]]
+name = "rust"
+
+[language.debugger]
+name = "codelldb"
+transport = "tcp"
+command = "/Users/wolf/develop/wolf/dap-mux/demos/rust/debug.sh"
+port-arg = "-p {}"
+
+[[language.debugger.templates]]
+name = "launch"
+request = "launch"
+completion = [{ name = "binary", completion = "filename" }]
+args = { program = "{0}" }
