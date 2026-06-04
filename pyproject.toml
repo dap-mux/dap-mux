@@ -52,7 +52,8 @@ Issues = "https://github.com/dap-mux/dap-mux/issues"
 Changelog = "https://github.com/dap-mux/dap-mux/blob/main/CHANGELOG.md"
 
 [project.scripts]
-dmux = "dap_mux.cli:app"
+dap-mux = "dap_mux.cli:app"
+dmux = "dap_mux.cli:dmux_deprecated"
 
 
 # === Hatch (build and versioning) ===

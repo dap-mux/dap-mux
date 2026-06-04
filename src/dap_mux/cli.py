@@ -1,8 +1,9 @@
 """
 Command-line interface for dap-mux.
 
-The ``dmux`` command starts the multiplexer, optionally spawning a
+The ``dap-mux`` command starts the multiplexer, optionally spawning a
 debug adapter, and prints the port for editors to connect to.
+``dmux`` is a deprecated alias that emits a warning and delegates here.
 
 """
 
@@ -25,7 +26,7 @@ from dap_mux.mux import Multiplexer
 _console = Console()
 
 app = typer.Typer(
-    name="dmux",
+    name="dap-mux",
     help="DAP multiplexer — debug from a REPL while your editor shows where you are.",
     add_completion=False,
 )
@@ -250,4 +251,13 @@ def _configure_logging(level: str, log_file: str | None) -> None:
         logger.add(log_file, level="DEBUG")
 
 
-__all__ = ("app",)
+def dmux_deprecated() -> None:
+    """Entry point for the deprecated ``dmux`` command."""
+    typer.echo(
+        "Warning: 'dmux' is deprecated and will be removed in a future release. Use 'dap-mux' instead.",
+        err=True,
+    )
+    app()
+
+
+__all__ = ("app", "dmux_deprecated")

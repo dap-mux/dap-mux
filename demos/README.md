@@ -22,7 +22,7 @@ watcher. See `rust/README.md` for the full workflow.
 **1. Start dap-mux with a pinned port:**
 
 ```
-dmux demos/fibonacci.py -p 5679
+dap-mux demos/fibonacci.py -p 5679
 ```
 
 The IPython prompt appears. The script is paused waiting for an editor to

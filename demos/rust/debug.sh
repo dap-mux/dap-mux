@@ -23,4 +23,4 @@ for i in "${!args[@]}"; do
     fi
 done
 
-exec dmux --attach 15678 --headless "$@"
+exec dap-mux --attach 15678 --headless "$@"

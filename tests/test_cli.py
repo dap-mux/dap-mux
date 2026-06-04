@@ -1,4 +1,4 @@
-"""Tests for the dmux CLI."""
+"""Tests for the dap-mux CLI."""
 
 from __future__ import annotations
 

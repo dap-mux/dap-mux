@@ -36,7 +36,7 @@ codelldb --port 5678
 **3. Start dap-mux in headless attach mode (Terminal 2):**
 
 ```
-dmux --attach 5678 --headless -p 5679
+dap-mux --attach 5678 --headless -p 5679
 ```
 
 **4. Start dap-observer (Terminal 3):**

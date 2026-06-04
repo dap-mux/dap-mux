@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.9.5 (2026-06-04)
+
+Rename CLI entry point and add Rust demo.
+
+**Changes:**
+* `dap-mux` is now the canonical command name. `dmux` still works but prints a deprecation warning and will be removed in a future release.
+
+**Demos:**
+* Rust demo: Dijkstra's shortest path debugged with codelldb, dap-observer, and Helix — the first non-Python demo showing dap-mux with an external debug adapter
+
 ## v0.9.3 (2026-05-31)
 
 Add `--headless` flag and document non-Python workflows.
@@ -35,8 +45,8 @@ First release. The core multiplexer is complete and live-tested: connect Helix o
 **Features:**
 * DAP multiplexer with full protocol support — framing, sequence rewriting, multi-client routing, event broadcasting
 * Late-join state replay — a client connecting to an already-running session receives the initialized handshake and current stop position immediately
-* Launch mode (`dmux script.py`) spawns debugpy and opens the IPython REPL in one command
-* Attach mode (`dmux --attach host:port`) connects to an already-running debug adapter
+* Launch mode (`dap-mux script.py`) spawns debugpy and opens the IPython REPL in one command
+* Attach mode (`dap-mux --attach host:port`) connects to an already-running debug adapter
 * IPython extension with debug magics: `%step`, `%next`, `%continue_`, `%finish`, `%bt`, `%frame`, `%eval`, `%break`, `%clear`, `%sync`, `%connect`, `%disconnect`
 * Headless mode (`--no-repl`) for scripted setups or external REPL frontends
 * Configurable mux port (`-p`), log level (`-l`), and log file

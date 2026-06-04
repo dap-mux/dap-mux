@@ -75,7 +75,7 @@ This example uses Helix and the built-in IPython frontend. Any DAP-capable edito
 **1. Start the session**
 
 ```
-dmux script.py
+dap-mux script.py
 ```
 
 dap-mux spawns debugpy, connects the multiplexer, and opens an IPython REPL:
@@ -121,7 +121,7 @@ Bare Python at the IPython prompt runs locally. `%eval` evaluates in the debugge
 ### Launch mode
 
 ```
-dmux script.py
+dap-mux script.py
 ```
 
 Spawns debugpy attached to `script.py`, starts the multiplexer, opens the IPython REPL. Everything in one command.
@@ -131,8 +131,8 @@ Spawns debugpy attached to `script.py`, starts the multiplexer, opens the IPytho
 When debugpy is already running:
 
 ```
-dmux --attach 5678
-dmux --attach 192.168.1.10:5678
+dap-mux --attach 5678
+dap-mux --attach 192.168.1.10:5678
 ```
 
 The IPython REPL connects to the existing session. Use `%sync` to discover the current stopped state if the session was already paused when you joined.
@@ -142,15 +142,15 @@ The IPython REPL connects to the existing session. Use `%sync` to discover the c
 Use `--headless` to start the multiplexer without the IPython REPL. Connect your own tools — any editor, any REPL frontend that speaks DAP.
 
 ```
-dmux script.py --headless
-dmux --attach 5678 --headless
+dap-mux script.py --headless
+dap-mux --attach 5678 --headless
 ```
 
 **What launches what:**
 
-In launch mode (`dmux script.py --headless`), dap-mux spawns debugpy attached to the Python script, starts the multiplexer, and waits. You connect your own clients.
+In launch mode (`dap-mux script.py --headless`), dap-mux spawns debugpy attached to the Python script, starts the multiplexer, and waits. You connect your own clients.
 
-In attach mode (`dmux --attach host:port --headless`), dap-mux connects to an already-running debug adapter — any language, any adapter. *You* are responsible for starting the adapter first.
+In attach mode (`dap-mux --attach host:port --headless`), dap-mux connects to an already-running debug adapter — any language, any adapter. *You* are responsible for starting the adapter first.
 
 **Using dap-mux with another language**
 
@@ -161,7 +161,7 @@ The multiplexer speaks standard DAP and works with any debug adapter. Here is a 
 rdbg --open --port 5678 script.rb
 
 # Terminal 2 — start the multiplexer
-dmux --attach 5678 --headless
+dap-mux --attach 5678 --headless
 # dap-mux listening on 127.0.0.1:5679
 
 # Now connect your editor to 127.0.0.1:5679 as a DAP server
@@ -172,7 +172,7 @@ Any DAP-capable editor connects immediately. A REPL frontend — the equivalent 
 ### CLI reference
 
 ```
-dmux [TARGET] [OPTIONS]
+dap-mux [TARGET] [OPTIONS]
 
 Arguments:
   TARGET                   Python script to debug (launch mode)
@@ -243,7 +243,7 @@ Install the [Python Debugger](https://marketplace.visualstudio.com/items?itemNam
 }
 ```
 
-Start dap-mux with a pinned port (`dmux script.py -p 5679`) so the launch config can hardcode it. Set breakpoints in VS Code before running the configuration — launching it sends `configurationDone` and starts execution.
+Start dap-mux with a pinned port (`dap-mux script.py -p 5679`) so the launch config can hardcode it. Set breakpoints in VS Code before running the configuration — launching it sends `configurationDone` and starts execution.
 
 A working copy of this configuration is in [`demos/vscode/`](demos/vscode/).
 
@@ -259,7 +259,7 @@ Any editor with a DAP client works. Configure it to connect to `127.0.0.1:<mux-p
 
 ## IPython Extension
 
-dap-mux ships with an IPython extension that turns IPython into a debug control surface. Load it with `%load_ext dap_mux`, or use `dmux` which loads it automatically.
+dap-mux ships with an IPython extension that turns IPython into a debug control surface. Load it with `%load_ext dap_mux`, or use `dap-mux` which loads it automatically.
 
 | Magic | Alias | Description |
 |---|---|---|
