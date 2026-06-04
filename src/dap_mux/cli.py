@@ -100,6 +100,17 @@ def main(
         typer.echo("Warning: --no-repl is deprecated, use --headless instead.", err=True)
         headless = True
 
+    if not headless:
+        try:
+            import IPython  # noqa: F401
+        except ImportError as exc:
+            typer.echo(
+                "Error: the IPython REPL requires dap-mux[ipython].\n"
+                "Install it with: uv tool install 'dap-mux[ipython]'",
+                err=True,
+            )
+            raise typer.Exit(code=1) from exc
+
     _configure_logging(log_level, log_file)
 
     try:
