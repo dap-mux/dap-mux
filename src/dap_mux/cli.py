@@ -175,7 +175,7 @@ def _run_with_repl(
     actual_port = result
     _console.print(f"[bold green]●[/] dap-mux ready — connect your editor to [bold cyan]127.0.0.1:{actual_port}[/]")
 
-    _start_ipython(actual_port, stop_on_entry=(target is not None))
+    _start_ipython(actual_port)
 
     shutdown.set()
     t.join(timeout=5.0)
@@ -217,16 +217,15 @@ async def _run_mux_until(
             await adapter.stop()
 
 
-def _start_ipython(port: int, *, stop_on_entry: bool = False) -> None:
+def _start_ipython(port: int) -> None:
     """Launch an IPython session with dap-mux pre-loaded and connected."""
     from IPython import start_ipython
     from traitlets.config import Config
 
     c = Config()
-    connect_flags = "--stop-on-entry " if stop_on_entry else ""
     c.InteractiveShellApp.exec_lines = [
         "%load_ext dap_mux.ipython_ext",
-        f"%connect {connect_flags}127.0.0.1:{port}",
+        f"%connect 127.0.0.1:{port}",
     ]
     start_ipython(config=c, argv=[])
 
